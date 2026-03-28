@@ -2,8 +2,6 @@
 //  StashApp.swift
 //  Stash
 //
-//  Created by Joe Poynton on 28/03/2026.
-//
 
 import SwiftUI
 import SwiftData
@@ -11,13 +9,14 @@ import SwiftData
 @main
 struct StashApp: App {
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
+        let schema = Schema([Location.self, Item.self])
+        // CloudKit sync via .automatic (uses iCloud.Poynt.Stash container).
+        // Requires iCloud + CloudKit capabilities in Xcode and the container
+        // provisioned in the Apple Developer portal.
+        // Falls back to local-only storage if iCloud is unavailable.
+        let config = ModelConfiguration(schema: schema, cloudKitDatabase: .automatic)
         do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            return try ModelContainer(for: schema, configurations: [config])
         } catch {
             fatalError("Could not create ModelContainer: \(error)")
         }
