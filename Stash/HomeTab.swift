@@ -3,7 +3,7 @@
 //  Stash
 //
 //  Dashboard tab. Shows Needs Attention, Recently Accessed, and the Area card grid.
-//  Search is Phase 4 — not included here.
+//  Search bar (Phase 4): live search across item names, location names, and notes.
 //
 
 import SwiftUI
@@ -46,6 +46,7 @@ struct HomeTab: View {
 
     @State private var showSettings = false
     @State private var selectedItem: Item? = nil
+    @State private var searchText = ""
 
     // MARK: Derived data
 
@@ -82,13 +83,20 @@ struct HomeTab: View {
     var body: some View {
         NavigationStack {
             Group {
-                if rootAreas.isEmpty {
+                if !searchText.isEmpty {
+                    searchResultsContent
+                } else if rootAreas.isEmpty {
                     emptyState
                 } else {
                     mainContent
                 }
             }
             .navigationTitle("Stash")
+            .searchable(
+                text: $searchText,
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: "Search items, spaces, notes…"
+            )
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showSettings = true } label: {
@@ -102,6 +110,55 @@ struct HomeTab: View {
         }
         .sheet(item: $selectedItem) {
             ItemDetailSheet(item: $0)
+        }
+    }
+
+    // MARK: Search
+
+    private var filteredItems: [Item] {
+        let q = searchText.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return [] }
+        return allItems.filter { itemMatchesSearch($0, query: q) }
+    }
+
+    private func itemMatchesSearch(_ item: Item, query: String) -> Bool {
+        if item.name.lowercased().contains(query) { return true }
+        if let notes = item.notes, notes.lowercased().contains(query) { return true }
+        var current: Location? = item.location
+        while let loc = current {
+            if loc.name.lowercased().contains(query) { return true }
+            current = loc.parent
+        }
+        return false
+    }
+
+    @ViewBuilder
+    private var searchResultsContent: some View {
+        let results = filteredItems
+        if results.isEmpty {
+            VStack {
+                Spacer()
+                Text("No results for \"\(searchText)\"")
+                    .foregroundStyle(Color(.secondaryLabel))
+                    .multilineTextAlignment(.center)
+                    .padding()
+                Spacer()
+            }
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(results.enumerated()), id: \.element.id) { index, item in
+                        SearchResultRow(item: item, onTap: { selectedItem = item })
+                        if index < results.count - 1 {
+                            Divider().padding(.leading, 16)
+                        }
+                    }
+                }
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal)
+                .padding(.top, 8)
+            }
         }
     }
 
