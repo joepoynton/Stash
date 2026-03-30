@@ -1,10 +1,10 @@
 //
 //  ItemDetailSheet.swift
 //  Stash
-//
 
 import SwiftUI
 import SwiftData
+import PhotosUI
 
 struct ItemDetailSheet: View {
     @Bindable var item: Item
@@ -15,10 +15,22 @@ struct ItemDetailSheet: View {
 
     @State private var showMoveSheet = false
     @State private var showDeleteConfirm = false
+    @State private var showPhotoOptions = false
+    @State private var showCamera = false
+    @State private var showPhotoPicker = false
+    @State private var selectedPhotoItem: PhotosPickerItem? = nil
+    @State private var showFullscreenPhoto = false
 
     var body: some View {
         NavigationStack {
             Form {
+                // Photo — full-width 3:2, camera icon to add/replace, tap to fullscreen
+                Section {
+                    photoSection
+                }
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+
                 // On-order banner
                 if item.orderStatus == .onOrder {
                     Section {
@@ -140,6 +152,38 @@ struct ItemDetailSheet: View {
                     }
                 )
             }
+            .sheet(isPresented: $showCamera) {
+                CameraCapture { image in
+                    if let data = ImageCompressor.compress(image) {
+                        item.photo = data
+                    }
+                }
+            }
+            .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images)
+            .onChange(of: selectedPhotoItem) { _, newItem in
+                guard let newItem else { return }
+                Task {
+                    if let data = try? await newItem.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data),
+                       let compressed = ImageCompressor.compress(image) {
+                        item.photo = compressed
+                    }
+                    selectedPhotoItem = nil
+                }
+            }
+            .confirmationDialog("Photo", isPresented: $showPhotoOptions) {
+                if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                    Button("Take Photo") { showCamera = true }
+                }
+                Button("Choose from Library") { showPhotoPicker = true }
+                if item.photo != nil {
+                    Button("Remove Photo", role: .destructive) { item.photo = nil }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+            .fullScreenCover(isPresented: $showFullscreenPhoto) {
+                FullscreenPhotoView(imageData: item.photo)
+            }
             .alert("Delete \"\(item.name)\"?", isPresented: $showDeleteConfirm) {
                 Button("Delete", role: .destructive) {
                     modelContext.delete(item)
@@ -148,6 +192,52 @@ struct ItemDetailSheet: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("This cannot be undone.")
+            }
+        }
+    }
+
+    // MARK: - Photo section
+
+    @ViewBuilder
+    private var photoSection: some View {
+        ZStack(alignment: .bottomTrailing) {
+            if let data = item.photo, let uiImage = UIImage(data: data) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity)
+                    .aspectRatio(3/2, contentMode: .fit)
+                    .clipped()
+                    .contentShape(Rectangle())
+                    .onTapGesture { showFullscreenPhoto = true }
+
+                // Camera icon to replace photo
+                Button {
+                    showPhotoOptions = true
+                } label: {
+                    Image(systemName: "camera.fill")
+                        .font(.caption)
+                        .padding(8)
+                        .background(.thinMaterial)
+                        .clipShape(Circle())
+                        .foregroundStyle(Color(.label))
+                }
+                .buttonStyle(.plain)
+                .padding(8)
+            } else {
+                // Placeholder — discoverable camera icon, tap to add
+                Button {
+                    showPhotoOptions = true
+                } label: {
+                    Color(.systemGray6)
+                        .aspectRatio(3/2, contentMode: .fit)
+                        .overlay {
+                            Image(systemName: "camera")
+                                .font(.title2)
+                                .foregroundStyle(Color(.tertiaryLabel))
+                        }
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -231,6 +321,36 @@ struct ItemDetailSheet: View {
             get: { item.notes ?? "" },
             set: { item.notes = $0.isEmpty ? nil : $0 }
         )
+    }
+}
+
+// MARK: - Fullscreen Photo View
+
+struct FullscreenPhotoView: View {
+    let imageData: Data?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+
+            if let data = imageData, let uiImage = UIImage(data: data) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title2)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, Color.black.opacity(0.5))
+                    .padding()
+            }
+        }
     }
 }
 

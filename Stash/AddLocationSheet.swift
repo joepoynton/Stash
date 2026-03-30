@@ -1,10 +1,10 @@
 //
 //  AddLocationSheet.swift
 //  Stash
-//
 
 import SwiftUI
 import SwiftData
+import PhotosUI
 
 struct AddLocationSheet: View {
     /// nil = creating a root Area; non-nil = creating a child space inside this location.
@@ -16,6 +16,11 @@ struct AddLocationSheet: View {
     @State private var name = ""
     @State private var selectedIcon: String? = "archivebox.fill"
     @State private var selectedColorHex: String? = nil
+    @State private var photoData: Data? = nil
+    @State private var photoSkipped = false
+    @State private var showCamera = false
+    @State private var showPhotoPicker = false
+    @State private var selectedPhotoItem: PhotosPickerItem? = nil
 
     @FocusState private var nameFocused: Bool
 
@@ -46,6 +51,13 @@ struct AddLocationSheet: View {
                             .padding(.vertical, 4)
                     }
                 }
+
+                // Photo prompt — encouraged
+                if !photoSkipped || photoData != nil {
+                    Section {
+                        photoPrompt
+                    }
+                }
             }
             .navigationTitle(isRoot ? "New Area" : "New Space")
             .navigationBarTitleDisplayMode(.inline)
@@ -59,8 +71,97 @@ struct AddLocationSheet: View {
                 }
             }
             .onAppear { nameFocused = true }
+            .sheet(isPresented: $showCamera) {
+                CameraCapture { image in
+                    if let data = ImageCompressor.compress(image) {
+                        photoData = data
+                    }
+                }
+            }
+            .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images)
+            .onChange(of: selectedPhotoItem) { _, newItem in
+                guard let newItem else { return }
+                Task {
+                    if let data = try? await newItem.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data),
+                       let compressed = ImageCompressor.compress(image) {
+                        photoData = compressed
+                    }
+                    selectedPhotoItem = nil
+                }
+            }
         }
     }
+
+    // MARK: - Photo prompt
+
+    @ViewBuilder
+    private var photoPrompt: some View {
+        if let data = photoData, let uiImage = UIImage(data: data) {
+            // Photo selected — show preview with change/remove options
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity)
+                .aspectRatio(3/2, contentMode: .fit)
+                .clipped()
+                .listRowInsets(EdgeInsets())
+
+            Button {
+                showPhotoPicker = true
+            } label: {
+                Label("Change Photo", systemImage: "camera")
+                    .foregroundStyle(.teal)
+            }
+
+            Button("Remove Photo", role: .destructive) {
+                photoData = nil
+            }
+        } else {
+            // Prompt — camera, library, skip
+            VStack(alignment: .center, spacing: 14) {
+                Image(systemName: "camera.fill")
+                    .font(.title2)
+                    .foregroundStyle(.teal)
+
+                Text("Add a photo of this space?")
+                    .font(.subheadline)
+                    .foregroundStyle(Color(.label))
+
+                HStack(spacing: 12) {
+                    if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                        Button {
+                            showCamera = true
+                        } label: {
+                            Label("Camera", systemImage: "camera")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.teal)
+                    }
+
+                    Button {
+                        showPhotoPicker = true
+                    } label: {
+                        Label("Library", systemImage: "photo")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.teal)
+                }
+
+                Button("Skip") {
+                    photoSkipped = true
+                }
+                .font(.subheadline)
+                .foregroundStyle(Color(.secondaryLabel))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+        }
+    }
+
+    // MARK: - Colour swatches
 
     private var colorSwatches: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 10) {
@@ -110,6 +211,7 @@ struct AddLocationSheet: View {
             color: isRoot ? selectedColorHex : nil,
             parent: parentLocation
         )
+        location.photo = photoData
         modelContext.insert(location)
         dismiss()
     }

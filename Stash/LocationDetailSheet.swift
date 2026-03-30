@@ -1,10 +1,10 @@
 //
 //  LocationDetailSheet.swift
 //  Stash
-//
 
 import SwiftUI
 import SwiftData
+import PhotosUI
 
 struct LocationDetailSheet: View {
     @Bindable var location: Location
@@ -16,6 +16,10 @@ struct LocationDetailSheet: View {
     @State private var showDeleteActionSheet = false
     @State private var showCascadeConfirm = false
     @State private var showEmptyDeleteConfirm = false
+    @State private var showPhotoOptions = false
+    @State private var showCamera = false
+    @State private var showPhotoPicker = false
+    @State private var selectedPhotoItem: PhotosPickerItem? = nil
 
     static let areaColors: [(name: String, hex: String)] = [
         ("Teal",   "#2A9D8F"), ("Blue",   "#3A86FF"), ("Purple", "#8338EC"),
@@ -38,6 +42,37 @@ struct LocationDetailSheet: View {
                     Section("Colour") {
                         colorSwatches
                             .padding(.vertical, 4)
+                    }
+                }
+
+                // Photo
+                Section("Photo") {
+                    if let data = location.photo, let uiImage = UIImage(data: data) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(maxWidth: .infinity)
+                            .aspectRatio(3/2, contentMode: .fit)
+                            .clipped()
+                            .listRowInsets(EdgeInsets())
+
+                        Button {
+                            showPhotoOptions = true
+                        } label: {
+                            Label("Replace Photo", systemImage: "camera")
+                                .foregroundStyle(.teal)
+                        }
+
+                        Button("Remove Photo", role: .destructive) {
+                            location.photo = nil
+                        }
+                    } else {
+                        Button {
+                            showPhotoOptions = true
+                        } label: {
+                            Label("Add Photo", systemImage: "camera")
+                                .foregroundStyle(.teal)
+                        }
                     }
                 }
 
@@ -76,6 +111,32 @@ struct LocationDetailSheet: View {
                         location.parent = newParent
                     }
                 )
+            }
+            .sheet(isPresented: $showCamera) {
+                CameraCapture { image in
+                    if let data = ImageCompressor.compress(image) {
+                        location.photo = data
+                    }
+                }
+            }
+            .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images)
+            .onChange(of: selectedPhotoItem) { _, newItem in
+                guard let newItem else { return }
+                Task {
+                    if let data = try? await newItem.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data),
+                       let compressed = ImageCompressor.compress(image) {
+                        location.photo = compressed
+                    }
+                    selectedPhotoItem = nil
+                }
+            }
+            .confirmationDialog("Photo", isPresented: $showPhotoOptions) {
+                if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                    Button("Take Photo") { showCamera = true }
+                }
+                Button("Choose from Library") { showPhotoPicker = true }
+                Button("Cancel", role: .cancel) {}
             }
             .confirmationDialog(
                 "Delete \"\(location.name)\"?",
