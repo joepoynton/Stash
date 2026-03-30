@@ -7,30 +7,26 @@ import SwiftUI
 
 struct ItemRow: View {
     let item: Item
-    let onTap: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
             // Thumbnail
             thumbnailView
 
-            // Name + notes — tap area opens detail sheet
-            Button(action: onTap) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.name)
-                        .font(.body)
-                        .foregroundStyle(Color(.label))
-                        .multilineTextAlignment(.leading)
-                    if let notes = item.notes, !notes.isEmpty {
-                        Text(notes)
-                            .font(.caption)
-                            .foregroundStyle(Color(.secondaryLabel))
-                            .lineLimit(1)
-                    }
+            // Name + notes
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name)
+                    .font(.body)
+                    .foregroundStyle(Color(.label))
+                    .multilineTextAlignment(.leading)
+                if let notes = item.notes, !notes.isEmpty {
+                    Text(notes)
+                        .font(.caption)
+                        .foregroundStyle(Color(.secondaryLabel))
+                        .lineLimit(1)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             // Inline quantity controls (shown only when tracking is on)
             if let qty = item.quantity {
@@ -74,6 +70,7 @@ struct ItemRow: View {
                 }
             }
         }
+        .contentShape(Rectangle())
     }
 
     @ViewBuilder

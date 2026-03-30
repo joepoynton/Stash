@@ -172,16 +172,19 @@ struct BrowseLocationView: View {
     @ViewBuilder
     private func itemRows(_ items: [Item]) -> some View {
         ForEach(items) { item in
-            ItemRow(item: item) { itemToShow = item }
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    Button(role: .destructive) {
-                        itemToDelete = item
-                        showItemDeleteAlert = true
-                    } label: { Label("Delete", systemImage: "trash") }
-                    Button { itemToShow = item }
-                        label: { Label("Edit", systemImage: "pencil") }
-                        .tint(.blue)
-                }
+            Button { itemToShow = item } label: {
+                ItemRow(item: item)
+            }
+            .buttonStyle(.plain)
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button(role: .destructive) {
+                    itemToDelete = item
+                    showItemDeleteAlert = true
+                } label: { Label("Delete", systemImage: "trash") }
+                Button { itemToShow = item }
+                    label: { Label("Edit", systemImage: "pencil") }
+                    .tint(.blue)
+            }
         }
     }
 

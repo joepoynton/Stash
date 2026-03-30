@@ -45,6 +45,7 @@ struct HomeTab: View {
     @AppStorage("staleThresholdDays") private var staleThresholdDays = 90
 
     @State private var showSettings = false
+    @State private var showAddArea = false
     @State private var selectedItem: Item? = nil
     @State private var searchText = ""
 
@@ -99,6 +100,11 @@ struct HomeTab: View {
             )
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showAddArea = true } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showSettings = true } label: {
                         Image(systemName: "gear")
                     }
@@ -107,6 +113,9 @@ struct HomeTab: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
+        }
+        .sheet(isPresented: $showAddArea) {
+            AddLocationSheet(parentLocation: nil)
         }
         .sheet(item: $selectedItem) {
             ItemDetailSheet(item: $0)
@@ -168,8 +177,8 @@ struct HomeTab: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 28) {
                 needsAttentionSection
-                recentlyAccessedSection
                 yourSpacesSection
+                recentlyAccessedSection
             }
             .padding(.horizontal)
             .padding(.vertical, 12)
