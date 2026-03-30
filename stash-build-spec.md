@@ -709,7 +709,10 @@ Work through these in order. Do not start Phase 2 until Phase 1 is tested and st
 ## APPENDIX C — Deferred Design Decisions (Add in Phase 7 Polish)
 
 **Area colour tinting cascades through child levels**
-When a root Area has a colour tint assigned, that tint should apply as a subtle navigation bar tint at every child level within that area — not just on the Area card itself. This gives the user a persistent peripheral cue about which top-level space they are inside as they drill deeper. Implement during Phase 7 visual polish alongside the full design system pass.
+When a root Area has a colour tint assigned, that tint should apply at every child level within that area — not just on the Area card itself. Specifically: the navigation bar tint and the breadcrumb text colour should reflect the Area's colour as the user drills deeper. This gives the user a persistent peripheral cue about which top-level space they are inside. Confirmed needed after Phase 3 testing — the breadcrumb currently shows in default teal regardless of Area colour. Implement during Phase 7 visual polish.
+
+**Recently Accessed — reduce prominence on Home screen**
+The Recently Accessed section works correctly but may be too prominent on the Home screen relative to its usefulness. Consider reducing its visual weight in Phase 7 — smaller row height, less vertical space, or moving it below Needs Attention with a more compact layout. Do not remove it — the feature is useful, just potentially overweighted in the current layout.
 
 ---
 

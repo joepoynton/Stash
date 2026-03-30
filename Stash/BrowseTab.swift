@@ -14,8 +14,7 @@ struct BrowseTab: View {
     // predicate compilation issues with optional relationship comparisons.
     @Query(sort: \Location.dateCreated) private var allLocations: [Location]
     @Environment(\.modelContext) private var modelContext
-
-    @State private var navigationPath: [Location] = []
+    @Environment(NavigationState.self) private var navState
     @State private var showAddLocation = false
     @State private var locationToEdit: Location? = nil
 
@@ -30,7 +29,8 @@ struct BrowseTab: View {
     }
 
     var body: some View {
-        NavigationStack(path: $navigationPath) {
+        @Bindable var bindableNavState = navState
+        NavigationStack(path: $bindableNavState.browseNavigationPath) {
             List {
                 ForEach(rootAreas) { area in
                     NavigationLink(value: area) {
@@ -61,7 +61,7 @@ struct BrowseTab: View {
                 }
             }
             .navigationDestination(for: Location.self) { location in
-                BrowseLocationView(location: location, navigationPath: $navigationPath)
+                BrowseLocationView(location: location, navigationPath: $bindableNavState.browseNavigationPath)
             }
         }
         // MARK: Sheets

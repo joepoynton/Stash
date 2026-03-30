@@ -7,19 +7,25 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
+    @State private var navState    = NavigationState()
+    @State private var recentStore = RecentlyAccessedStore()
+
     var body: some View {
-        TabView {
-            Tab("Home", systemImage: "house.fill") {
-                Text("Home") // Phase 3
+        @Bindable var bindableNavState = navState
+        TabView(selection: $bindableNavState.selectedTab) {
+            Tab("Home", systemImage: "house.fill", value: 0) {
+                HomeTab()
             }
-            Tab("Browse", systemImage: "square.grid.2x2.fill") {
+            Tab("Browse", systemImage: "square.grid.2x2.fill", value: 1) {
                 BrowseTab()
             }
-            Tab("Restock", systemImage: "cart.fill") {
+            Tab("Restock", systemImage: "cart.fill", value: 2) {
                 Text("Restock") // Phase 5
             }
         }
         .tint(.teal)
+        .environment(navState)
+        .environment(recentStore)
     }
 }
 

@@ -11,6 +11,7 @@ struct ItemDetailSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(RecentlyAccessedStore.self) private var recentStore
 
     @State private var showMoveSheet = false
     @State private var showDeleteConfirm = false
@@ -62,16 +63,28 @@ struct ItemDetailSheet: View {
                 }
 
                 // Expiry
-                if let expiry = item.expiryDate {
-                    Section {
-                        let expiringSoon = expiry.timeIntervalSinceNow < 30 * 86400
-                        Label {
-                            Text("Expires \(expiry.formatted(date: .long, time: .omitted))")
-                        } icon: {
-                            Image(systemName: "calendar")
-                                .foregroundStyle(expiringSoon ? .orange : Color(.secondaryLabel))
+                Section {
+                    Toggle("Track expiry date", isOn: Binding(
+                        get: { item.expiryDate != nil },
+                        set: { item.expiryDate = $0 ? (item.expiryDate ?? Date()) : nil }
+                    ))
+
+                    if item.expiryDate != nil {
+                        DatePicker(
+                            "Expiry date",
+                            selection: Binding(
+                                get: { item.expiryDate ?? Date() },
+                                set: { item.expiryDate = $0 }
+                            ),
+                            displayedComponents: .date
+                        )
+
+                        let expiringSoon = (item.expiryDate ?? .distantFuture).timeIntervalSinceNow < 30 * 86400
+                        if expiringSoon {
+                            Label("Expires soon", systemImage: "exclamationmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
                         }
-                        .foregroundStyle(expiringSoon ? .orange : Color(.label))
                     }
                 }
 
@@ -106,6 +119,9 @@ struct ItemDetailSheet: View {
             }
             .navigationTitle(item.name)
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                recentStore.record(itemID: item.id)
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
