@@ -20,7 +20,7 @@ struct ContentView: View {
                 BrowseTab()
             }
             Tab("Restock", systemImage: "cart.fill", value: 2) {
-                Text("Restock") // Phase 5
+                RestockTab()
             }
         }
         .tint(.teal)
