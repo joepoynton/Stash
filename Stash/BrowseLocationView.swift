@@ -19,6 +19,7 @@ struct BrowseLocationView: View {
     @State private var showAddActionSheet = false
     @State private var addingItem = false
     @State private var addingLocation = false
+    @State private var showQuickAdd = false
     @State private var itemToShow: Item? = nil
     @State private var locationToEdit: Location? = nil
 
@@ -100,6 +101,9 @@ struct BrowseLocationView: View {
         .toolbar {
             ToolbarItem(placement: .principal) { breadcrumbHeader }
             ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showQuickAdd = true } label: { Image(systemName: "bolt") }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showAddActionSheet = true } label: { Image(systemName: "plus") }
             }
         }
@@ -112,6 +116,7 @@ struct BrowseLocationView: View {
         // MARK: Sheets
         .sheet(isPresented: $addingItem)     { AddItemSheet(location: location) }
         .sheet(isPresented: $addingLocation) { AddLocationSheet(parentLocation: location) }
+        .sheet(isPresented: $showQuickAdd)   { QuickAddSheet(location: location) }
         .sheet(item: $itemToShow)            { ItemDetailSheet(item: $0) }
         .sheet(item: $locationToEdit)        { LocationDetailSheet(location: $0) }
         // MARK: Location delete — non-empty
@@ -263,5 +268,61 @@ struct BrowseLocationView: View {
         for child in loc.childList { child.parent   = dest }
         for item  in loc.itemList  { item.location  = dest }
         modelContext.delete(loc)
+    }
+}
+
+// MARK: - Quick Add Sheet
+
+private struct QuickAddSheet: View {
+    let location: Location
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+
+    @State private var name = ""
+    @State private var addedCount = 0
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 0) {
+                TextField("Item name", text: $name)
+                    .font(.body)
+                    .padding()
+                    .focused($focused)
+                    .onSubmit { saveAndClear() }
+                    .submitLabel(.return)
+
+                Divider()
+
+                if addedCount > 0 {
+                    Text("\(addedCount) item\(addedCount == 1 ? "" : "s") added")
+                        .font(.caption)
+                        .foregroundStyle(Color(.secondaryLabel))
+                        .padding(.horizontal)
+                        .padding(.top, 10)
+                }
+
+                Spacer()
+            }
+            .navigationTitle("Quick Add")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .onAppear { focused = true }
+        }
+    }
+
+    private func saveAndClear() {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        let item = Item(name: trimmed, location: location)
+        modelContext.insert(item)
+        addedCount += 1
+        name = ""
+        focused = true
     }
 }

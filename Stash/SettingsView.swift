@@ -10,6 +10,7 @@ import SwiftData
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Location.dateCreated) private var allLocations: [Location]
 
     @AppStorage("staleThresholdDays") private var staleThresholdDays = 90
@@ -17,6 +18,7 @@ struct SettingsView: View {
     @State private var showExportConfirm = false
     @State private var exportURL: URL? = nil
     @State private var showShareSheet = false
+    @State private var showDeleteAllConfirm = false
 
     var body: some View {
         NavigationStack {
@@ -64,6 +66,13 @@ struct SettingsView: View {
                     LabeledContent("Version", value: appVersion)
                     LabeledContent("Build", value: buildNumber)
                 }
+
+                // DEVELOPER TOOL — Remove before App Store submission
+                Section("Developer Tools") {
+                    Button("Delete All Data", role: .destructive) {
+                        showDeleteAllConfirm = true
+                    }
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -83,6 +92,13 @@ struct SettingsView: View {
             } message: {
                 Text("Photos are not included in this export.")
             }
+            // DEVELOPER TOOL — Remove before App Store submission
+            .alert("Delete All Data?", isPresented: $showDeleteAllConfirm) {
+                Button("Delete Everything", role: .destructive) { deleteAllData() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This will permanently delete all locations and items from this device and iCloud. This cannot be undone.")
+            }
             // Share sheet
             .sheet(isPresented: $showShareSheet, onDismiss: cleanupExportFile) {
                 if let url = exportURL {
@@ -100,6 +116,14 @@ struct SettingsView: View {
 
     private var buildNumber: String {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+    }
+
+    // MARK: - Developer Tools
+    // DEVELOPER TOOL — Remove before App Store submission
+
+    private func deleteAllData() {
+        try? modelContext.delete(model: Item.self)
+        try? modelContext.delete(model: Location.self)
     }
 
     // MARK: - Export
