@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -19,6 +20,10 @@ struct SettingsView: View {
     @State private var exportURL: URL? = nil
     @State private var showShareSheet = false
     @State private var showDeleteAllConfirm = false
+    @State private var showImportPicker = false
+    @State private var showImportResult = false
+    @State private var importResultMessage = ""
+    @State private var importResultTitle = "Import Complete"
 
     var body: some View {
         NavigationStack {
@@ -44,6 +49,9 @@ struct SettingsView: View {
                 Section("Data") {
                     Button("Export Data") {
                         showExportConfirm = true
+                    }
+                    Button("Import Data") {
+                        showImportPicker = true
                     }
                 }
 
@@ -105,6 +113,26 @@ struct SettingsView: View {
                     ExportShareSheet(url: url)
                 }
             }
+            // File picker for JSON import
+            .fileImporter(
+                isPresented: $showImportPicker,
+                allowedContentTypes: [UTType.json]
+            ) { result in
+                switch result {
+                case .success(let url):
+                    importJSON(from: url)
+                case .failure:
+                    importResultTitle = "Import Failed"
+                    importResultMessage = "Could not open the file."
+                    showImportResult = true
+                }
+            }
+            // Import result feedback
+            .alert(importResultTitle, isPresented: $showImportResult) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(importResultMessage)
+            }
         }
     }
 
@@ -159,6 +187,74 @@ struct SettingsView: View {
         guard let url = exportURL else { return }
         try? FileManager.default.removeItem(at: url)
         exportURL = nil
+    }
+
+    // MARK: - Import
+
+    private func importJSON(from url: URL) {
+        guard url.startAccessingSecurityScopedResource() else {
+            importResultTitle = "Import Failed"
+            importResultMessage = "Permission denied — could not access the file."
+            showImportResult = true
+            return
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+
+        guard let data = try? Data(contentsOf: url) else {
+            importResultTitle = "Import Failed"
+            importResultMessage = "Could not read the file."
+            showImportResult = true
+            return
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        guard let root = try? decoder.decode(ImportRoot.self, from: data) else {
+            importResultTitle = "Import Failed"
+            importResultMessage = "The file is not a valid Stash export."
+            showImportResult = true
+            return
+        }
+
+        var itemCount = 0
+        for area in root.areas {
+            let location = Location(name: area.name, icon: area.icon, color: area.color, parent: nil)
+            modelContext.insert(location)
+            insertChildren(of: area, into: location, itemCount: &itemCount)
+        }
+
+        try? modelContext.save()
+
+        let areaCount = root.areas.count
+        let areaWord = areaCount == 1 ? "area" : "areas"
+        let itemWord = itemCount == 1 ? "item" : "items"
+        importResultTitle = "Import Complete"
+        importResultMessage = "Imported \(areaCount) \(areaWord) and \(itemCount) \(itemWord)."
+        showImportResult = true
+    }
+
+    private func insertChildren(of imported: ImportLocation, into location: Location, itemCount: inout Int) {
+        for importedChild in imported.children ?? [] {
+            let child = Location(name: importedChild.name, icon: importedChild.icon, color: importedChild.color, parent: location)
+            modelContext.insert(child)
+            insertChildren(of: importedChild, into: child, itemCount: &itemCount)
+        }
+        for importedItem in imported.items ?? [] {
+            let item = Item(name: importedItem.name, location: location)
+            item.notes = importedItem.notes
+            item.quantity = importedItem.quantity
+            item.unit = importedItem.unit
+            item.minimumQuantity = importedItem.minimumQuantity
+            item.expiryDate = importedItem.expiryDate
+            if importedItem.orderStatus == OrderStatus.onOrder.rawValue {
+                item.orderStatusRaw = OrderStatus.onOrder.rawValue
+            }
+            if let dateAdded = importedItem.dateAdded { item.dateAdded = dateAdded }
+            if let lastVerified = importedItem.lastVerified { item.lastVerified = lastVerified }
+            modelContext.insert(item)
+            itemCount += 1
+        }
     }
 }
 
@@ -230,4 +326,32 @@ private struct ExportItem: Encodable {
         dateAdded = item.dateAdded
         lastVerified = item.lastVerified
     }
+}
+
+// MARK: - Import data structures
+
+private struct ImportRoot: Decodable {
+    let appVersion: String?
+    let exportDate: Date?
+    let areas: [ImportLocation]
+}
+
+private struct ImportLocation: Decodable {
+    let name: String
+    let icon: String?
+    let color: String?
+    let children: [ImportLocation]?
+    let items: [ImportItem]?
+}
+
+private struct ImportItem: Decodable {
+    let name: String
+    let notes: String?
+    let quantity: Int?
+    let unit: String?
+    let minimumQuantity: Int?
+    let expiryDate: Date?
+    let orderStatus: String?
+    let dateAdded: Date?
+    let lastVerified: Date?
 }
