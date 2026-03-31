@@ -68,7 +68,7 @@ struct HomeTab: View {
             if let expiry = item.expiryDate, expiry <= expiryThreshold {
                 return (item, .expiringSoon)
             }
-            if item.lastVerified <= staleThreshold {
+            if item.lastVerified <= staleThreshold && !item.neverStale {
                 return (item, .notVerified)
             }
             return nil
@@ -198,10 +198,14 @@ struct HomeTab: View {
 
                 VStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.item.id) { index, entry in
-                        Button { selectedItem = entry.item } label: {
-                            NeedsAttentionRow(item: entry.item, reason: entry.reason)
-                        }
-                        .buttonStyle(.plain)
+                        NeedsAttentionRow(
+                            item: entry.item,
+                            reason: entry.reason,
+                            onTap: { selectedItem = entry.item },
+                            onNeverStale: entry.reason == .notVerified
+                                ? { entry.item.neverStale = true }
+                                : nil
+                        )
 
                         if index < items.count - 1 {
                             Divider().padding(.leading, 16)
@@ -338,34 +342,51 @@ struct HomeTab: View {
 private struct NeedsAttentionRow: View {
     let item: Item
     let reason: AttentionReason
+    let onTap: () -> Void
+    let onNeverStale: (() -> Void)?
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.name)
-                    .font(.body)
-                    .foregroundStyle(Color(.label))
-                if !locationPath.isEmpty {
-                    Text(locationPath)
-                        .font(.caption)
-                        .foregroundStyle(Color(.secondaryLabel))
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name)
+                        .font(.body)
+                        .foregroundStyle(Color(.label))
+                    if !locationPath.isEmpty {
+                        Text(locationPath)
+                            .font(.caption)
+                            .foregroundStyle(Color(.secondaryLabel))
+                    }
                 }
+
+                Spacer()
+
+                Text(reason.label)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(reason.color)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(reason.color.opacity(0.12))
+                    .clipShape(Capsule())
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, onNeverStale != nil ? 6 : 10)
 
-            Spacer()
-
-            Text(reason.label)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundStyle(reason.color)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(reason.color.opacity(0.12))
-                .clipShape(Capsule())
+            if let action = onNeverStale {
+                Button(action: action) {
+                    Text("Never mark as unverified")
+                        .font(.caption)
+                        .foregroundStyle(.teal)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
         .contentShape(Rectangle())
+        .onTapGesture { onTap() }
     }
 
     private var locationPath: String {

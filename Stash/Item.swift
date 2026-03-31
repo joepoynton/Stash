@@ -34,6 +34,7 @@ final class Item {
     var dateAdded: Date = Date()
     var lastVerified: Date = Date()
     var isStarred: Bool = false  // Reserved for v1.1. Always false in v1.
+    var neverStale: Bool = false // When true, item is exempt from stale/unverified checking.
     var location: Location?      // Optional for CloudKit compatibility. Required in app logic.
 
     init(name: String, location: Location? = nil) {

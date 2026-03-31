@@ -120,6 +120,16 @@ struct ItemDetailSheet: View {
                     Text("Added \(item.dateAdded.formatted(date: .long, time: .omitted))")
                         .font(.caption)
                         .foregroundStyle(Color(.secondaryLabel))
+
+                    Toggle(isOn: $item.neverStale) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Never mark as unverified")
+                            Text("This item will never appear as unverified")
+                                .font(.caption)
+                                .foregroundStyle(Color(.secondaryLabel))
+                        }
+                    }
+                    .tint(.teal)
                 }
 
                 // Delete
