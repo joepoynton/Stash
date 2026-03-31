@@ -32,6 +32,20 @@ struct BrowseLocationView: View {
     @State private var itemToDelete: Item? = nil
     @State private var showItemDeleteAlert = false
 
+    // MARK: - Area tint
+
+    /// Walks up to the root ancestor and returns its colour, falling back to teal.
+    private var areaTint: Color {
+        var current: Location? = location
+        while let parent = current?.parent {
+            current = parent
+        }
+        guard let hex = current?.color, let color = Color(hex: hex) else {
+            return .teal
+        }
+        return color
+    }
+
     // MARK: - Derived data
 
     private var sortedChildren: [Location] {
@@ -77,10 +91,11 @@ struct BrowseLocationView: View {
                 } actions: {
                     Button("+ Add your first item") { addingItem = true }
                         .buttonStyle(.bordered)
-                        .tint(.teal)
+                        .tint(areaTint)
                 }
             }
         }
+        .tint(areaTint)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) { breadcrumbHeader }
@@ -164,7 +179,7 @@ struct BrowseLocationView: View {
                     label: { Label("Delete", systemImage: "trash") }
                 Button { locationToEdit = child }
                     label: { Label("Edit", systemImage: "pencil") }
-                    .tint(.blue)
+                    .tint(.teal)
             }
         }
     }
@@ -183,7 +198,7 @@ struct BrowseLocationView: View {
                 } label: { Label("Delete", systemImage: "trash") }
                 Button { itemToShow = item }
                     label: { Label("Edit", systemImage: "pencil") }
-                    .tint(.blue)
+                    .tint(.teal)
             }
         }
     }
@@ -208,7 +223,7 @@ struct BrowseLocationView: View {
                             Text(ancestor.name)
                                 .font(.caption2)
                                 .foregroundStyle(
-                                    ancestor.id == location.id ? Color(.label) : .teal
+                                    ancestor.id == location.id ? Color(.label) : areaTint
                                 )
                         }
                         .buttonStyle(.plain)

@@ -41,7 +41,7 @@ struct BrowseTab: View {
                             label: { Label("Delete", systemImage: "trash") }
                         Button { locationToEdit = area }
                             label: { Label("Edit", systemImage: "pencil") }
-                            .tint(.blue)
+                            .tint(.teal)
                     }
                 }
             }

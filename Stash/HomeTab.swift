@@ -41,6 +41,7 @@ struct HomeTab: View {
 
     @Environment(NavigationState.self) private var navState
     @Environment(RecentlyAccessedStore.self) private var recentStore
+    @Environment(\.modelContext) private var modelContext
 
     @AppStorage("staleThresholdDays") private var staleThresholdDays = 90
 
@@ -175,7 +176,7 @@ struct HomeTab: View {
 
     private var mainContent: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 28) {
+            LazyVStack(alignment: .leading, spacing: 24) {
                 needsAttentionSection
                 yourSpacesSection
                 recentlyAccessedSection
@@ -219,9 +220,11 @@ struct HomeTab: View {
     private var recentlyAccessedSection: some View {
         let items = recentItems
         if !items.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text("Recently Accessed")
-                    .font(.title2).bold()
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color(.secondaryLabel))
 
                 VStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
@@ -262,25 +265,71 @@ struct HomeTab: View {
         }
     }
 
-    // MARK: Empty state
+    // MARK: Empty state (onboarding)
+
+    private static let onboardingChips: [(name: String, icon: String)] = [
+        ("Garage",  "car.fill"),
+        ("Loft",    "shippingbox.fill"),
+        ("Car",     "car.circle.fill"),
+        ("Kitchen", "fork.knife"),
+        ("Bedroom", "bed.double.fill"),
+        ("Office",  "desktopcomputer"),
+        ("Work",    "briefcase.fill"),
+        ("Shed",    "wrench.and.screwdriver.fill")
+    ]
 
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: "archivebox")
-                .font(.system(size: 52))
-                .foregroundStyle(Color(.tertiaryLabel))
-            VStack(spacing: 6) {
-                Text("Start by adding your spaces")
-                    .font(.headline)
-                Text("Where do you keep things? Garage, loft, car — add them here.")
-                    .font(.subheadline)
-                    .foregroundStyle(Color(.secondaryLabel))
-                    .multilineTextAlignment(.center)
+        ScrollView {
+            VStack(spacing: 28) {
+                Spacer(minLength: 48)
+
+                VStack(spacing: 8) {
+                    Text("Start by adding your spaces")
+                        .font(.headline)
+                        .multilineTextAlignment(.center)
+                    Text("Where do you keep things? Garage, loft, car — add them here.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color(.secondaryLabel))
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Self.onboardingChips, id: \.name) { chip in
+                            Button {
+                                createArea(name: chip.name, icon: chip.icon)
+                            } label: {
+                                Label(chip.name, systemImage: chip.icon)
+                                    .font(.subheadline)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 9)
+                                    .background(Color(.secondarySystemBackground))
+                                    .clipShape(Capsule())
+                                    .foregroundStyle(Color(.label))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+
+                Button {
+                    showAddArea = true
+                } label: {
+                    Label("Add a custom space", systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
+                .tint(.teal)
+
+                Spacer(minLength: 48)
             }
-            Spacer()
         }
-        .padding()
+    }
+
+    private func createArea(name: String, icon: String) {
+        let location = Location(name: name, icon: icon)
+        modelContext.insert(location)
     }
 }
 
@@ -338,13 +387,13 @@ private struct RecentlyAccessedRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(item.name)
-                    .font(.body)
+                    .font(.subheadline)
                     .foregroundStyle(Color(.label))
                 if !locationPath.isEmpty {
                     Text(locationPath)
-                        .font(.caption)
+                        .font(.system(size: 10))
                         .foregroundStyle(Color(.secondaryLabel))
                 }
             }
@@ -353,12 +402,12 @@ private struct RecentlyAccessedRow: View {
 
             if let qty = item.quantity {
                 Text(item.unit.map { "\(qty) \($0)" } ?? "\(qty)")
-                    .font(.subheadline.monospacedDigit())
+                    .font(.caption.monospacedDigit())
                     .foregroundStyle(Color(.secondaryLabel))
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 5)
         .contentShape(Rectangle())
     }
 
