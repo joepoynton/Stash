@@ -280,7 +280,8 @@ private struct QuickAddSheet: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var name = ""
-    @State private var addedCount = 0
+    @State private var addedItems: [Item] = []
+    @State private var itemToDetail: Item? = nil
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -295,15 +296,27 @@ private struct QuickAddSheet: View {
 
                 Divider()
 
-                if addedCount > 0 {
-                    Text("\(addedCount) item\(addedCount == 1 ? "" : "s") added")
-                        .font(.caption)
-                        .foregroundStyle(Color(.secondaryLabel))
-                        .padding(.horizontal)
-                        .padding(.top, 10)
+                if !addedItems.isEmpty {
+                    List(addedItems) { item in
+                        HStack {
+                            Text(item.name)
+                                .foregroundStyle(Color(.label))
+                            Spacer()
+                            Button("Add detail") {
+                                // Unfocus the text field so the new sheet
+                                // gets clean keyboard state.
+                                focused = false
+                                itemToDetail = item
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(.teal)
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .listStyle(.plain)
+                } else {
+                    Spacer()
                 }
-
-                Spacer()
             }
             .navigationTitle("Quick Add")
             .navigationBarTitleDisplayMode(.inline)
@@ -313,6 +326,9 @@ private struct QuickAddSheet: View {
                 }
             }
             .onAppear { focused = true }
+            .sheet(item: $itemToDetail, onDismiss: { focused = true }) {
+                ItemDetailSheet(item: $0)
+            }
         }
     }
 
@@ -321,7 +337,7 @@ private struct QuickAddSheet: View {
         guard !trimmed.isEmpty else { return }
         let item = Item(name: trimmed, location: location)
         modelContext.insert(item)
-        addedCount += 1
+        addedItems.insert(item, at: 0)   // newest at top
         name = ""
         focused = true
     }

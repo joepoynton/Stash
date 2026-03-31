@@ -21,6 +21,12 @@ struct ItemDetailSheet: View {
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var showFullscreenPhoto = false
 
+    // Quantity tracking
+    @State private var showTurnOffQuantityConfirm = false
+    @State private var editingQuantity = false
+    @State private var quantityEntryText = ""
+    @FocusState private var quantityFieldFocused: Bool
+
     var body: some View {
         NavigationStack {
             Form {
@@ -69,10 +75,8 @@ struct ItemDetailSheet: View {
                         .lineLimit(3...8)
                 }
 
-                // Quantity
-                if item.quantity != nil {
-                    quantitySection
-                }
+                // Quantity — toggle always visible; controls expand when tracking is on
+                quantitySection
 
                 // Expiry
                 Section {
@@ -148,6 +152,19 @@ struct ItemDetailSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+                // Done button above the number pad — only visible when editing quantity
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    if editingQuantity {
+                        Button("Done") { commitQuantityEntry() }
+                    }
+                }
+            }
+            .onChange(of: quantityFieldFocused) { _, isFocused in
+                // Commit if focus moves away from the quantity field
+                if !isFocused && editingQuantity {
+                    commitQuantityEntry()
+                }
             }
             .sheet(isPresented: $showMoveSheet) {
                 LocationPickerSheet(
@@ -203,6 +220,16 @@ struct ItemDetailSheet: View {
             } message: {
                 Text("This cannot be undone.")
             }
+            .alert("Turn off quantity tracking?", isPresented: $showTurnOffQuantityConfirm) {
+                Button("Turn Off", role: .destructive) {
+                    item.quantity = nil
+                    item.unit = nil
+                    item.minimumQuantity = nil
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The current quantity, unit, and minimum will be cleared.")
+            }
         }
     }
 
@@ -256,64 +283,137 @@ struct ItemDetailSheet: View {
 
     private var quantitySection: some View {
         Section("Quantity") {
-            HStack {
-                Button {
-                    item.decrementQuantity()
-                } label: {
-                    Image(systemName: "minus.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle((item.quantity ?? 0) == 0 ? Color(.tertiaryLabel) : .teal)
-                }
-                .buttonStyle(.plain)
-                .disabled((item.quantity ?? 0) == 0)
-
-                Spacer()
-
-                HStack(alignment: .lastTextBaseline, spacing: 4) {
-                    Text("\(item.quantity ?? 0)")
-                        .font(.title.monospacedDigit())
-                    if let unit = item.unit, !unit.isEmpty {
-                        Text(unit)
-                            .font(.title3)
-                            .foregroundStyle(Color(.secondaryLabel))
+            // Toggle — always visible. Turning off requires confirmation.
+            Toggle("Track quantity", isOn: Binding(
+                get: { item.quantity != nil },
+                set: { newValue in
+                    if newValue {
+                        item.quantity = 0
+                    } else {
+                        showTurnOffQuantityConfirm = true
+                        // item.quantity stays non-nil until the alert confirms,
+                        // so the toggle springs back to ON automatically.
                     }
                 }
+            ))
+            .tint(.teal)
 
-                Spacer()
+            if item.quantity != nil {
+                // +  /  tappable number  /  −
+                HStack {
+                    Button {
+                        item.decrementQuantity()
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle((item.quantity ?? 0) == 0 ? Color(.tertiaryLabel) : .teal)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled((item.quantity ?? 0) == 0)
 
-                Button {
-                    item.incrementQuantity()
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.teal)
+                    Spacer()
+
+                    quantityDisplay
+
+                    Spacer()
+
+                    Button {
+                        item.incrementQuantity()
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.teal)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-            }
-            .padding(.vertical, 4)
+                .padding(.vertical, 4)
 
-            if let min = item.minimumQuantity {
-                Text("Minimum: \(min)\(item.unit.map { " \($0)" } ?? "")")
-                    .font(.caption)
-                    .foregroundStyle(Color(.secondaryLabel))
-            }
+                // Unit
+                HStack {
+                    Text("Unit")
+                    Spacer()
+                    TextField("e.g. rolls, tablets", text: unitBinding)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 160)
+                }
 
-            switch item.orderStatus {
-            case .low:
-                Label("Low stock", systemImage: "exclamationmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.teal)
-            case .onOrder:
-                Label("On order", systemImage: "shippingbox")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            case .normal:
-                EmptyView()
+                // Minimum
+                Stepper(
+                    "Minimum: \(item.minimumQuantity ?? 0)",
+                    value: Binding(
+                        get: { item.minimumQuantity ?? 0 },
+                        set: { item.minimumQuantity = $0 > 0 ? $0 : nil }
+                    ),
+                    in: 0...9999
+                )
+
+                // Stock status badge
+                switch item.orderStatus {
+                case .low:
+                    Label("Low stock", systemImage: "exclamationmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.teal)
+                case .onOrder:
+                    Label("On order", systemImage: "shippingbox")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                case .normal:
+                    EmptyView()
+                }
+            }
+        }
+    }
+
+    // The centre of the +/- row. Tapping the number switches to an inline
+    // TextField with a number pad; committing restores the display.
+    @ViewBuilder
+    private var quantityDisplay: some View {
+        if editingQuantity {
+            TextField("0", text: $quantityEntryText)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.center)
+                .font(.title.monospacedDigit())
+                .focused($quantityFieldFocused)
+                .frame(minWidth: 60)
+        } else {
+            HStack(alignment: .lastTextBaseline, spacing: 4) {
+                Text("\(item.quantity ?? 0)")
+                    .font(.title.monospacedDigit())
+                    .foregroundStyle(Color(.label))
+                    .underline(color: Color(.tertiaryLabel))   // subtle tap hint
+                if let unit = item.unit, !unit.isEmpty {
+                    Text(unit)
+                        .font(.title3)
+                        .foregroundStyle(Color(.secondaryLabel))
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                quantityEntryText = "\(item.quantity ?? 0)"
+                editingQuantity = true
+                quantityFieldFocused = true
             }
         }
     }
 
     // MARK: - Helpers
+
+    private func commitQuantityEntry() {
+        guard editingQuantity else { return }
+        if let value = Int(quantityEntryText) {
+            item.updateQuantity(to: max(0, value))
+        }
+        editingQuantity = false
+        quantityEntryText = ""
+        quantityFieldFocused = false
+    }
+
+    private var unitBinding: Binding<String> {
+        Binding(
+            get: { item.unit ?? "" },
+            set: { item.unit = $0.isEmpty ? nil : String($0.prefix(20)) }
+        )
+    }
 
     private var locationPath: String {
         guard let location = item.location else { return "No location" }
