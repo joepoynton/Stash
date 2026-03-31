@@ -125,27 +125,32 @@ struct HomeTab: View {
 
     // MARK: Search
 
+    /// Items whose own name or notes field matches — location name is intentionally excluded
+    /// so location matches surface only in the Spaces section.
     private var filteredItems: [Item] {
         let q = searchText.lowercased().trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return [] }
-        return allItems.filter { itemMatchesSearch($0, query: q) }
+        return allItems.filter { item in
+            item.name.lowercased().contains(q) ||
+            (item.notes?.lowercased().contains(q) == true)
+        }
     }
 
-    private func itemMatchesSearch(_ item: Item, query: String) -> Bool {
-        if item.name.lowercased().contains(query) { return true }
-        if let notes = item.notes, notes.lowercased().contains(query) { return true }
-        var current: Location? = item.location
-        while let loc = current {
-            if loc.name.lowercased().contains(query) { return true }
-            current = loc.parent
-        }
-        return false
+    /// Locations whose name matches the query.
+    private var filteredLocations: [Location] {
+        let q = searchText.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return [] }
+        return allLocations
+            .filter { $0.name.lowercased().contains(q) }
+            .sorted { $0.name < $1.name }
     }
 
     @ViewBuilder
     private var searchResultsContent: some View {
-        let results = filteredItems
-        if results.isEmpty {
+        let items     = filteredItems
+        let locations = filteredLocations
+
+        if items.isEmpty && locations.isEmpty {
             VStack {
                 Spacer()
                 Text("No results for \"\(searchText)\"")
@@ -156,34 +161,81 @@ struct HomeTab: View {
             }
         } else {
             ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(results.enumerated()), id: \.element.id) { index, item in
-                        SearchResultRow(item: item, onTap: { selectedItem = item })
-                        if index < results.count - 1 {
-                            Divider().padding(.leading, 16)
+                LazyVStack(alignment: .leading, spacing: 20) {
+
+                    // MARK: Items section
+                    if !items.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Items")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Color(.secondaryLabel))
+                                .padding(.horizontal, 4)
+
+                            VStack(spacing: 0) {
+                                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                                    SearchResultRow(item: item, onTap: { selectedItem = item })
+                                    if index < items.count - 1 {
+                                        Divider().padding(.leading, 16)
+                                    }
+                                }
+                            }
+                            .background(Color(.secondarySystemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+
+                    // MARK: Spaces section
+                    if !locations.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Spaces")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Color(.secondaryLabel))
+                                .padding(.horizontal, 4)
+
+                            VStack(spacing: 0) {
+                                ForEach(Array(locations.enumerated()), id: \.element.id) { index, location in
+                                    SearchLocationRow(location: location) {
+                                        navigateToLocation(location)
+                                    }
+                                    if index < locations.count - 1 {
+                                        Divider().padding(.leading, 52)
+                                    }
+                                }
+                            }
+                            .background(Color(.secondarySystemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
                     }
                 }
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
                 .padding(.horizontal)
                 .padding(.top, 8)
             }
         }
     }
 
+    /// Deep-links into the Browse tab at the given location, building the full ancestor chain.
+    private func navigateToLocation(_ location: Location) {
+        var chain: [Location] = []
+        var current: Location? = location
+        while let loc = current {
+            chain.insert(loc, at: 0)
+            current = loc.parent
+        }
+        navState.browseNavigationPath = chain
+        navState.selectedTab = 1
+    }
+
     // MARK: Main content
 
     private var mainContent: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 24) {
-                needsAttentionSection
-                yourSpacesSection
-                recentlyAccessedSection
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 12)
+        List {
+            needsAttentionSection
+            yourSpacesSection
+            recentlyAccessedSection
         }
+        .listStyle(.insetGrouped)
     }
 
     // MARK: Needs Attention
@@ -192,69 +244,42 @@ struct HomeTab: View {
     private var needsAttentionSection: some View {
         let items = needsAttentionItems
         if !items.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
+            Section {
+                ForEach(items, id: \.item.id) { entry in
+                    NeedsAttentionRow(
+                        item: entry.item,
+                        reason: entry.reason,
+                        onTap: { selectedItem = entry.item },
+                        onNeverStale: entry.reason == .notVerified
+                            ? { entry.item.neverStale = true }
+                            : nil
+                    )
+                    .listRowInsets(EdgeInsets())
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        if entry.reason == .lowStock {
+                            Button {
+                                entry.item.markAsOrdered()
+                            } label: {
+                                Label("Mark as Ordered", systemImage: "shippingbox.fill")
+                            }
+                            .tint(.orange)
+                        }
+                    }
+                }
+            } header: {
                 Text("Needs Attention")
                     .font(.title2).bold()
-
-                VStack(spacing: 0) {
-                    ForEach(Array(items.enumerated()), id: \.element.item.id) { index, entry in
-                        NeedsAttentionRow(
-                            item: entry.item,
-                            reason: entry.reason,
-                            onTap: { selectedItem = entry.item },
-                            onNeverStale: entry.reason == .notVerified
-                                ? { entry.item.neverStale = true }
-                                : nil
-                        )
-
-                        if index < items.count - 1 {
-                            Divider().padding(.leading, 16)
-                        }
-                    }
-                }
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-        }
-    }
-
-    // MARK: Recently Accessed
-
-    @ViewBuilder
-    private var recentlyAccessedSection: some View {
-        let items = recentItems
-        if !items.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Recently Accessed")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(Color(.secondaryLabel))
-
-                VStack(spacing: 0) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        Button { selectedItem = item } label: {
-                            RecentlyAccessedRow(item: item)
-                        }
-                        .buttonStyle(.plain)
-
-                        if index < items.count - 1 {
-                            Divider().padding(.leading, 16)
-                        }
-                    }
-                }
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .foregroundStyle(Color(.label))
+                    .textCase(nil)
             }
         }
     }
 
     // MARK: Your Spaces
 
+    @ViewBuilder
     private var yourSpacesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Your Spaces")
-                .font(.title2).bold()
-
+        Section {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 160))], spacing: 12) {
                 ForEach(rootAreas) { area in
                     Button {
@@ -265,6 +290,39 @@ struct HomeTab: View {
                     }
                     .buttonStyle(.plain)
                 }
+            }
+            .padding(.vertical, 4)
+            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        } header: {
+            Text("Your Spaces")
+                .font(.title2).bold()
+                .foregroundStyle(Color(.label))
+                .textCase(nil)
+        }
+    }
+
+    // MARK: Recently Accessed
+
+    @ViewBuilder
+    private var recentlyAccessedSection: some View {
+        let items = recentItems
+        if !items.isEmpty {
+            Section {
+                ForEach(items) { item in
+                    Button { selectedItem = item } label: {
+                        RecentlyAccessedRow(item: item)
+                    }
+                    .buttonStyle(.plain)
+                    .listRowInsets(EdgeInsets())
+                }
+            } header: {
+                Text("Recently Accessed")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color(.secondaryLabel))
+                    .textCase(nil)
             }
         }
     }
@@ -393,6 +451,58 @@ private struct NeedsAttentionRow: View {
         guard let location = item.location else { return "" }
         var parts: [String] = []
         var current: Location? = location
+        while let loc = current {
+            parts.insert(loc.name, at: 0)
+            current = loc.parent
+        }
+        return parts.joined(separator: " › ")
+    }
+}
+
+// MARK: - Search location row
+
+private struct SearchLocationRow: View {
+    let location: Location
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                Image(systemName: location.icon ?? "folder.fill")
+                    .font(.body)
+                    .foregroundStyle(location.icon != nil ? .teal : Color(.secondaryLabel))
+                    .frame(width: 28)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(location.name)
+                        .font(.headline)
+                        .foregroundStyle(Color(.label))
+                    if !ancestorPath.isEmpty {
+                        Text(ancestorPath)
+                            .font(.caption)
+                            .foregroundStyle(Color(.secondaryLabel))
+                    }
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color(.tertiaryLabel))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Full path of ancestors above this location, e.g. "Kitchen › Cupboards".
+    /// Empty if this is a root area.
+    private var ancestorPath: String {
+        var parts: [String] = []
+        var current: Location? = location.parent
         while let loc = current {
             parts.insert(loc.name, at: 0)
             current = loc.parent

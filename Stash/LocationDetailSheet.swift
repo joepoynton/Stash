@@ -62,10 +62,6 @@ struct LocationDetailSheet: View {
                             Label("Replace Photo", systemImage: "camera")
                                 .foregroundStyle(.teal)
                         }
-
-                        Button("Remove Photo", role: .destructive) {
-                            location.photo = nil
-                        }
                     } else {
                         Button {
                             showPhotoOptions = true
@@ -131,12 +127,13 @@ struct LocationDetailSheet: View {
                     selectedPhotoItem = nil
                 }
             }
-            .confirmationDialog("Photo", isPresented: $showPhotoOptions) {
-                if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                    Button("Take Photo") { showCamera = true }
-                }
-                Button("Choose from Library") { showPhotoPicker = true }
-                Button("Cancel", role: .cancel) {}
+            .sheet(isPresented: $showPhotoOptions) {
+                PhotoSourceSheet(
+                    hasPhoto: location.photo != nil,
+                    onCamera:  { showCamera        = true },
+                    onLibrary: { showPhotoPicker   = true },
+                    onRemove:  { location.photo    = nil  }
+                )
             }
             .confirmationDialog(
                 "Delete \"\(location.name)\"?",

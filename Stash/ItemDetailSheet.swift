@@ -198,15 +198,13 @@ struct ItemDetailSheet: View {
                     selectedPhotoItem = nil
                 }
             }
-            .confirmationDialog("Photo", isPresented: $showPhotoOptions) {
-                if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                    Button("Take Photo") { showCamera = true }
-                }
-                Button("Choose from Library") { showPhotoPicker = true }
-                if item.photo != nil {
-                    Button("Remove Photo", role: .destructive) { item.photo = nil }
-                }
-                Button("Cancel", role: .cancel) {}
+            .sheet(isPresented: $showPhotoOptions) {
+                PhotoSourceSheet(
+                    hasPhoto: item.photo != nil,
+                    onCamera:  { showCamera      = true },
+                    onLibrary: { showPhotoPicker = true },
+                    onRemove:  { item.photo      = nil  }
+                )
             }
             .fullScreenCover(isPresented: $showFullscreenPhoto) {
                 FullscreenPhotoView(imageData: item.photo)
