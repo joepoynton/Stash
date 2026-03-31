@@ -20,8 +20,18 @@ struct AreaCard: View {
     private var hasPhoto: Bool { area.photo != nil }
     private var hasColorTint: Bool { area.color != nil }
 
+    private var nameTextColor: Color {
+        if hasPhoto {
+            return hasColorTint ? tintColor : .white
+        } else if hasColorTint {
+            return .white
+        } else {
+            return Color(.label)
+        }
+    }
+
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack(alignment: .bottomLeading) {
             backgroundLayer
 
             // Gradient scrim on photo cards for text legibility
@@ -37,7 +47,7 @@ struct AreaCard: View {
             HStack(alignment: .bottom, spacing: 0) {
                 Text(area.name)
                     .font(.headline)
-                    .foregroundStyle(hasPhoto || hasColorTint ? .white : Color(.label))
+                    .foregroundStyle(nameTextColor)
                     .lineLimit(2)
                     .padding(.leading, 10)
                     .padding(.bottom, 8)
@@ -60,11 +70,17 @@ struct AreaCard: View {
     @ViewBuilder
     private var backgroundLayer: some View {
         if let data = area.photo, let uiImage = UIImage(data: data) {
-            // Photo background with dark overlay
-            Image(uiImage: uiImage)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .overlay(Color.black.opacity(0.4))
+            // Photo background: GeometryReader ensures the image fills the
+            // 3:2 frame exactly without squashing — scaledToFill + clipped
+            // crops overflow rather than distorting the image.
+            GeometryReader { geo in
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .clipped()
+            }
+            .overlay(Color.black.opacity(0.4))
         } else if let hexColor = area.color, let color = Color(hex: hexColor) {
             // Solid tinted background — icon in white
             color.overlay {

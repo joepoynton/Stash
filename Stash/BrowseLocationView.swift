@@ -177,6 +177,7 @@ struct BrowseLocationView: View {
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 Button(role: .destructive) { requestDeleteLocation(child) }
                     label: { Label("Delete", systemImage: "trash") }
+                    .tint(.red)
                 Button { locationToEdit = child }
                     label: { Label("Edit", systemImage: "pencil") }
                     .tint(.teal)
@@ -196,6 +197,7 @@ struct BrowseLocationView: View {
                     itemToDelete = item
                     showItemDeleteAlert = true
                 } label: { Label("Delete", systemImage: "trash") }
+                    .tint(.red)
                 Button { itemToShow = item }
                     label: { Label("Edit", systemImage: "pencil") }
                     .tint(.teal)

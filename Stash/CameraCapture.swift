@@ -9,11 +9,15 @@
 import SwiftUI
 import UIKit
 
+private class PortraitImagePickerController: UIImagePickerController {
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }
+}
+
 struct CameraCapture: UIViewControllerRepresentable {
     let onCapture: (UIImage) -> Void
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
+        let picker = PortraitImagePickerController()
         picker.sourceType = .camera
         picker.delegate = context.coordinator
         return picker

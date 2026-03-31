@@ -698,11 +698,14 @@ Work through these in order. Do not start Phase 2 until Phase 1 is tested and st
 - Push notifications (v1.1)
 - Configurable expiry warning window (v1.1)
 - Starred items UI (v1.1)
-- CSV / spreadsheet import (v1.1)
+- CSV / spreadsheet import (v1.1) — see import notes below
 - iPad split-view layout (v1.5)
 - Siri / AppIntents integration (v1.5)
 - Freemium / StoreKit 2 paywall (pre-App Store submission)
 - Widget support (future)
+
+**Note on spreadsheet import (v1.1):**
+Joe's existing Excel inventory has a 3-column structure across ~8 sheets: location › item › contents. This was built without Stash's tree structure in mind, so automated import will be imperfect. The realistic approach for v1.1 is a guided CSV import where the user exports one sheet at a time, maps columns to Stash fields (location path, item name, notes), and the importer creates the location tree and items accordingly. A fully automated Excel import is not realistic — the data will need some manual cleanup regardless. The JSON export format (Part 7) is the clean path for future migrations once the data lives in Stash.
 
 ---
 
@@ -711,8 +714,23 @@ Work through these in order. Do not start Phase 2 until Phase 1 is tested and st
 **Area colour tinting cascades through child levels**
 When a root Area has a colour tint assigned, that tint should apply at every child level within that area — not just on the Area card itself. Specifically: the navigation bar tint and the breadcrumb text colour should reflect the Area's colour as the user drills deeper. This gives the user a persistent peripheral cue about which top-level space they are inside. Confirmed needed after Phase 3 testing — the breadcrumb currently shows in default teal regardless of Area colour. Implement during Phase 7 visual polish.
 
+The colour tinting approach needs further thought. Three options identified:
+- Tint the Area card name text in the assigned colour (visible on the photo card)
+- Apply a low-opacity colour overlay on top of the Area card photo
+- Apply the colour to child-level folder icons and navigation elements, even if not visible on the photo card itself
+Preferred approach: apply the area colour to child location row icons (the folder/container icons in Browse rows), the navigation bar tint at all child levels, and the breadcrumb segments. The photo card itself gets the area name in white (standard) — the colour identity becomes apparent as soon as the user drills in.
+
 **Recently Accessed — reduce prominence on Home screen**
 The Recently Accessed section works correctly but may be too prominent on the Home screen relative to its usefulness. Consider reducing its visual weight in Phase 7 — smaller row height, less vertical space, or moving it below Needs Attention with a more compact layout. Do not remove it — the feature is useful, just potentially overweighted in the current layout.
+
+**Delete swipe action must be red throughout Browse**
+Currently inconsistent — delete is teal at some levels and red at others. Delete must always be system red (`.destructive`) at every level of the Browse tree. Edit swipe action should be teal. Fix in Phase 7 or as a standalone bug fix.
+
+**Area card photo crop must be constrained to 3:2**
+All Area cards must display at a consistent 3:2 landscape ratio regardless of the source photo dimensions. Currently photos from the library can produce wildly different card heights. Use `.aspectRatio(3/2, contentMode: .fill)` with `.clipped()` on the card image. Fix as a standalone bug fix — do not wait for Phase 7.
+
+**App name / logo treatment**
+The "Stash" text in the navigation bar is currently plain system text. A future version should replace this with a stylised logo or wordmark. No design concept exists yet — park this for post-v1 once a visual identity is established. Consider as part of App Store listing design work.
 
 ---
 
