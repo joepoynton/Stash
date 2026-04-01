@@ -69,6 +69,18 @@ struct ItemDetailSheet: View {
                     }
                 }
 
+                // Out of place
+                Section {
+                    Toggle("Out of place", isOn: $item.isOutOfPlace)
+                        .tint(.teal)
+                        .onChange(of: item.isOutOfPlace) { _, newValue in
+                            if !newValue { item.outOfPlaceNote = nil }
+                        }
+                    if item.isOutOfPlace {
+                        TextField("Note (optional)", text: outOfPlaceNoteBinding)
+                    }
+                }
+
                 // Notes
                 Section("Notes") {
                     TextField("Add notes…", text: notesBinding, axis: .vertical)
@@ -127,8 +139,8 @@ struct ItemDetailSheet: View {
 
                     Toggle(isOn: $item.neverStale) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Never mark as unverified")
-                            Text("This item will never appear as unverified")
+                            Text("Always verified")
+                            Text("This item will never be flagged as out of date")
                                 .font(.caption)
                                 .foregroundStyle(Color(.secondaryLabel))
                         }
@@ -428,6 +440,13 @@ struct ItemDetailSheet: View {
         Binding(
             get: { item.notes ?? "" },
             set: { item.notes = $0.isEmpty ? nil : $0 }
+        )
+    }
+
+    private var outOfPlaceNoteBinding: Binding<String> {
+        Binding(
+            get: { item.outOfPlaceNote ?? "" },
+            set: { item.outOfPlaceNote = $0.isEmpty ? nil : $0 }
         )
     }
 }

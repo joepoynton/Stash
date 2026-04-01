@@ -15,12 +15,14 @@ private enum AttentionReason {
     case lowStock
     case expiringSoon
     case notVerified
+    case outOfPlace
 
     var label: String {
         switch self {
         case .lowStock:     "Low stock"
         case .expiringSoon: "Expires soon"
         case .notVerified:  "Not verified"
+        case .outOfPlace:   "Out of place"
         }
     }
 
@@ -29,6 +31,7 @@ private enum AttentionReason {
         case .lowStock:     .teal
         case .expiringSoon: .orange
         case .notVerified:  Color(.secondaryLabel)
+        case .outOfPlace:   Color(.systemIndigo)
         }
     }
 }
@@ -62,6 +65,9 @@ struct HomeTab: View {
         let staleThreshold  = now.addingTimeInterval(-Double(staleThresholdDays) * 86400)
 
         return allItems.compactMap { item in
+            if item.isOutOfPlace {
+                return (item, .outOfPlace)
+            }
             if item.orderStatus == .low {
                 return (item, .lowStock)
             }
@@ -434,7 +440,7 @@ private struct NeedsAttentionRow: View {
 
             if let action = onNeverStale {
                 Button(action: action) {
-                    Text("Never mark as unverified")
+                    Text("Always verified")
                         .font(.caption)
                         .foregroundStyle(.teal)
                 }

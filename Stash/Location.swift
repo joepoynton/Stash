@@ -20,6 +20,9 @@ final class Location {
     var items: [Item]?
     var dateCreated: Date = Date()
     var isStarred: Bool = false  // Reserved for v1.1. Always false in v1.
+    /// Manual sort position within siblings. 0 = unset (sort alphabetically).
+    /// Once any sibling is manually reordered, all get explicit values starting from 1.
+    var sortOrder: Int = 0
 
     init(
         name: String,

@@ -8,6 +8,7 @@
 
 import SwiftUI
 import SwiftData
+import PhotosUI
 
 struct BrowseLocationView: View {
     let location: Location
@@ -33,6 +34,15 @@ struct BrowseLocationView: View {
     @State private var itemToDelete: Item? = nil
     @State private var showItemDeleteAlert = false
 
+    // Location photo state
+    @State private var showLocationPhotoOptions = false
+    @State private var showLocationCamera = false
+    @State private var showLocationPhotoPicker = false
+    @State private var selectedLocationPhoto: PhotosPickerItem? = nil
+
+    // Reorder mode
+    @State private var editMode: EditMode = .inactive
+
     // MARK: - Area tint
 
     /// Walks up to the root ancestor and returns its colour, falling back to teal.
@@ -50,7 +60,18 @@ struct BrowseLocationView: View {
     // MARK: - Derived data
 
     private var sortedChildren: [Location] {
-        location.childList.sorted { $0.name < $1.name }
+        let list = location.childList
+        // If any child has been manually ordered (sortOrder > 0), use manual order.
+        // New locations (sortOrder == 0) sort alphabetically after ordered items.
+        guard list.contains(where: { $0.sortOrder > 0 }) else {
+            return list.sorted { $0.name < $1.name }
+        }
+        return list.sorted { a, b in
+            if a.sortOrder == 0 && b.sortOrder == 0 { return a.name < b.name }
+            if a.sortOrder == 0 { return false }
+            if b.sortOrder == 0 { return true }
+            return a.sortOrder < b.sortOrder
+        }
     }
 
     private var sortedItems: [Item] {
@@ -83,6 +104,7 @@ struct BrowseLocationView: View {
                 itemRows(items)
             }
         }
+        .environment(\.editMode, $editMode)
         .overlay {
             if children.isEmpty && items.isEmpty {
                 ContentUnavailableView {
@@ -100,6 +122,20 @@ struct BrowseLocationView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) { breadcrumbHeader }
+            ToolbarItem(placement: .navigationBarLeading) {
+                if !location.childList.isEmpty {
+                    Button(editMode.isEditing ? "Done" : "Reorder") {
+                        withAnimation {
+                            editMode = editMode.isEditing ? .inactive : .active
+                        }
+                    }
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showLocationPhotoOptions = true } label: {
+                    Image(systemName: location.photo != nil ? "camera.fill" : "camera")
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showQuickAdd = true } label: { Image(systemName: "bolt") }
             }
@@ -119,6 +155,33 @@ struct BrowseLocationView: View {
         .sheet(isPresented: $showQuickAdd)   { QuickAddSheet(location: location) }
         .sheet(item: $itemToShow)            { ItemDetailSheet(item: $0) }
         .sheet(item: $locationToEdit)        { LocationDetailSheet(location: $0) }
+        .sheet(isPresented: $showLocationPhotoOptions) {
+            PhotoSourceSheet(
+                hasPhoto: location.photo != nil,
+                onCamera:  { showLocationCamera      = true },
+                onLibrary: { showLocationPhotoPicker = true },
+                onRemove:  { location.photo          = nil  }
+            )
+        }
+        .sheet(isPresented: $showLocationCamera) {
+            CameraCapture { image in
+                if let data = ImageCompressor.compress(image) {
+                    location.photo = data
+                }
+            }
+        }
+        .photosPicker(isPresented: $showLocationPhotoPicker, selection: $selectedLocationPhoto, matching: .images)
+        .onChange(of: selectedLocationPhoto) { _, newItem in
+            guard let newItem else { return }
+            Task {
+                if let data = try? await newItem.loadTransferable(type: Data.self),
+                   let image = UIImage(data: data),
+                   let compressed = ImageCompressor.compress(image) {
+                    location.photo = compressed
+                }
+                selectedLocationPhoto = nil
+            }
+        }
         // MARK: Location delete — non-empty
         .confirmationDialog(
             "Delete \"\(locationToDelete?.name ?? "")\"?",
@@ -186,6 +249,13 @@ struct BrowseLocationView: View {
                 Button { locationToEdit = child }
                     label: { Label("Edit", systemImage: "pencil") }
                     .tint(.teal)
+            }
+        }
+        .onMove { indices, destination in
+            var ordered = children
+            ordered.move(fromOffsets: indices, toOffset: destination)
+            for (index, child) in ordered.enumerated() {
+                child.sortOrder = index + 1
             }
         }
     }

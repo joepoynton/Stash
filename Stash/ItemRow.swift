@@ -15,10 +15,17 @@ struct ItemRow: View {
 
             // Name + notes
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.name)
-                    .font(.body)
-                    .foregroundStyle(Color(.label))
-                    .multilineTextAlignment(.leading)
+                HStack(spacing: 4) {
+                    Text(item.name)
+                        .font(.body)
+                        .foregroundStyle(Color(.label))
+                        .multilineTextAlignment(.leading)
+                    if item.isOutOfPlace {
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.caption)
+                            .foregroundStyle(Color(.secondaryLabel))
+                    }
+                }
                 if let notes = item.notes, !notes.isEmpty {
                     Text(notes)
                         .font(.caption)
