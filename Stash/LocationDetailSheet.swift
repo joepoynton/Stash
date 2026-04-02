@@ -13,6 +13,7 @@ struct LocationDetailSheet: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var showMoveSheet = false
+    @State private var pickerExpandedIDs: Set<UUID> = []
     @State private var showDeleteActionSheet = false
     @State private var showCascadeConfirm = false
     @State private var showEmptyDeleteConfirm = false
@@ -29,80 +30,20 @@ struct LocationDetailSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    TextField("Name", text: $location.name)
-                }
-
-                if location.isRoot {
-                    Section("Icon") {
-                        SymbolPickerView(selected: $location.icon)
-                            .padding(.vertical, 4)
-                    }
-                    Section("Colour") {
-                        colorSwatches
-                            .padding(.vertical, 4)
+            formContent
+                .navigationTitle("Edit Space")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
                     }
                 }
-
-                // Photo
-                Section("Photo") {
-                    if let data = location.photo, let uiImage = UIImage(data: data) {
-                        Image(uiImage: uiImage)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(maxWidth: .infinity)
-                            .aspectRatio(3/2, contentMode: .fit)
-                            .clipped()
-                            .listRowInsets(EdgeInsets())
-
-                        Button {
-                            showPhotoOptions = true
-                        } label: {
-                            Label("Replace Photo", systemImage: "camera")
-                                .foregroundStyle(.teal)
-                        }
-                    } else {
-                        Button {
-                            showPhotoOptions = true
-                        } label: {
-                            Label("Add Photo", systemImage: "camera")
-                                .foregroundStyle(.teal)
-                        }
-                    }
-                }
-
-                Section {
-                    Button {
-                        showMoveSheet = true
-                    } label: {
-                        Label("Move to…", systemImage: "arrow.up.arrow.down")
-                            .foregroundStyle(.teal)
-                    }
-                }
-
-                Section {
-                    Button("Delete Space", role: .destructive) {
-                        if location.childList.isEmpty && location.itemList.isEmpty {
-                            showEmptyDeleteConfirm = true
-                        } else {
-                            showDeleteActionSheet = true
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Edit Space")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
             .sheet(isPresented: $showMoveSheet) {
                 LocationPickerSheet(
                     title: "Move to…",
                     excludedIDs: selfAndDescendantIDs,
                     allowTopLevel: true,
+                    expandedIDs: $pickerExpandedIDs,
                     onSelect: { newParent in
                         location.parent = newParent
                     }
@@ -166,6 +107,74 @@ struct LocationDetailSheet: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("This cannot be undone.")
+            }
+        }
+    }
+
+    // MARK: - Form content
+
+    @ViewBuilder
+    private var formContent: some View {
+        Form {
+            Section {
+                TextField("Name", text: $location.name)
+            }
+
+            if location.isRoot {
+                Section("Icon") {
+                    SymbolPickerView(selected: $location.icon)
+                        .padding(.vertical, 4)
+                }
+                Section("Colour") {
+                    colorSwatches
+                        .padding(.vertical, 4)
+                }
+            }
+
+            // Photo
+            Section("Photo") {
+                if let data = location.photo, let uiImage = UIImage(data: data) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(maxWidth: .infinity)
+                        .aspectRatio(3/2, contentMode: .fit)
+                        .clipped()
+                        .listRowInsets(EdgeInsets())
+
+                    Button {
+                        showPhotoOptions = true
+                    } label: {
+                        Label("Replace Photo", systemImage: "camera")
+                            .foregroundStyle(.teal)
+                    }
+                } else {
+                    Button {
+                        showPhotoOptions = true
+                    } label: {
+                        Label("Add Photo", systemImage: "camera")
+                            .foregroundStyle(.teal)
+                    }
+                }
+            }
+
+            Section {
+                Button {
+                    showMoveSheet = true
+                } label: {
+                    Label("Move to…", systemImage: "arrow.up.arrow.down")
+                        .foregroundStyle(.teal)
+                }
+            }
+
+            Section {
+                Button("Delete Space", role: .destructive) {
+                    if location.childList.isEmpty && location.itemList.isEmpty {
+                        showEmptyDeleteConfirm = true
+                    } else {
+                        showDeleteActionSheet = true
+                    }
+                }
             }
         }
     }

@@ -16,13 +16,13 @@ struct LocationPickerSheet: View {
     let excludedIDs: Set<UUID>
     /// When true, shows a "Top Level" option that returns nil (makes location a root).
     let allowTopLevel: Bool
+    /// Tracks which nodes have been expanded by the user.
+    /// Passed in as a Binding so state survives across repeated openings of the sheet.
+    @Binding var expandedIDs: Set<UUID>
     let onSelect: (Location?) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Location.name) private var allLocations: [Location]
-
-    /// Tracks which nodes have been expanded by the user. Starts empty (all collapsed).
-    @State private var expandedIDs: Set<UUID> = []
 
     // MARK: - Tree helpers
 
@@ -125,20 +125,6 @@ private struct LocationPickerRow: View {
                 Spacer().frame(width: CGFloat(depth) * 20)
             }
 
-            // Disclosure chevron — only occupies tap space when children exist
-            Button(action: onToggle) {
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(Color(.secondaryLabel))
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .opacity(hasChildren ? 1 : 0)
-                    .frame(width: 24, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(!hasChildren)
-
             // Icon + name — tapping selects this location
             Button(action: onSelect) {
                 HStack(spacing: 8) {
@@ -147,13 +133,26 @@ private struct LocationPickerRow: View {
                         .foregroundStyle(location.icon != nil ? .teal : Color(.secondaryLabel))
                     Text(location.name)
                         .foregroundStyle(Color(.label))
-                    Spacer()
                 }
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(height: 44)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+
+            // Disclosure chevron — trailing side, 44×44pt tap target, only when has children
+            if hasChildren {
+                Button(action: onToggle) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color(.secondaryLabel))
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 }

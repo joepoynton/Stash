@@ -14,6 +14,7 @@ struct ItemDetailSheet: View {
     @Environment(RecentlyAccessedStore.self) private var recentStore
 
     @State private var showMoveSheet = false
+    @State private var pickerExpandedIDs: Set<UUID> = []
     @State private var showDeleteConfirm = false
     @State private var showPhotoOptions = false
     @State private var showCamera = false
@@ -183,6 +184,7 @@ struct ItemDetailSheet: View {
                     title: "Move to…",
                     excludedIDs: [],
                     allowTopLevel: false,
+                    expandedIDs: $pickerExpandedIDs,
                     onSelect: { newLocation in
                         if let loc = newLocation {
                             item.location = loc

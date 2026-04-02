@@ -24,6 +24,7 @@ final class Item {
     var id: UUID = UUID()
     var name: String = ""
     var notes: String?
+    @Attribute(.externalStorage)
     var photo: Data?           // Compressed JPEG. Max 1200px long edge.
     var quantity: Int?         // Nil = quantity tracking off.
     var unit: String?          // Free text, max 20 chars. Shown next to quantity.

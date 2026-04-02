@@ -11,6 +11,7 @@ final class Location {
     var id: UUID = UUID()
     var name: String = ""
     var icon: String?          // SF Symbol name. Root nodes only per spec — retained on demotion.
+    @Attribute(.externalStorage)
     var photo: Data?           // Compressed JPEG. Max 1200px long edge.
     var color: String?         // Hex string. Root nodes only — retained on demotion.
     var parent: Location?
