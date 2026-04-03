@@ -4,7 +4,6 @@
 
 import SwiftUI
 import SwiftData
-import PhotosUI
 
 struct ItemDetailSheet: View {
     @Bindable var item: Item
@@ -16,10 +15,8 @@ struct ItemDetailSheet: View {
     @State private var showMoveSheet = false
     @State private var pickerExpandedIDs: Set<UUID> = []
     @State private var showDeleteConfirm = false
-    @State private var showPhotoOptions = false
     @State private var showCamera = false
-    @State private var showPhotoPicker = false
-    @State private var selectedPhotoItem: PhotosPickerItem? = nil
+    @State private var showPhotoActions = false
     @State private var showFullscreenPhoto = false
 
     // Quantity tracking
@@ -200,32 +197,22 @@ struct ItemDetailSheet: View {
                     }
                 )
             }
-            .sheet(isPresented: $showCamera) {
-                CameraCapture { image in
-                    if let data = ImageCompressor.compress(image) {
-                        item.photo = data
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraView { data in
+                    Task {
+                        let image = UIImage(data: data)
+                        let compressed = image.flatMap { ImageCompressor.compress($0) }
+                        await MainActor.run {
+                            if let compressed { item.photo = compressed }
+                        }
                     }
                 }
+                .ignoresSafeArea()
             }
-            .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images)
-            .onChange(of: selectedPhotoItem) { _, newItem in
-                guard let newItem else { return }
-                Task {
-                    if let data = try? await newItem.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data),
-                       let compressed = ImageCompressor.compress(image) {
-                        item.photo = compressed
-                    }
-                    selectedPhotoItem = nil
-                }
-            }
-            .sheet(isPresented: $showPhotoOptions) {
-                PhotoSourceSheet(
-                    hasPhoto: item.photo != nil,
-                    onCamera:  { showCamera      = true },
-                    onLibrary: { showPhotoPicker = true },
-                    onRemove:  { item.photo      = nil  }
-                )
+            .confirmationDialog("Photo", isPresented: $showPhotoActions, titleVisibility: .hidden) {
+                Button("Replace Photo") { showCamera = true }
+                Button("Remove Photo", role: .destructive) { item.photo = nil }
+                Button("Cancel", role: .cancel) {}
             }
             .fullScreenCover(isPresented: $showFullscreenPhoto) {
                 FullscreenPhotoView(imageData: item.photo)
@@ -267,9 +254,9 @@ struct ItemDetailSheet: View {
                     .contentShape(Rectangle())
                     .onTapGesture { showFullscreenPhoto = true }
 
-                // Camera icon to replace photo
+                // Camera icon to replace/remove photo
                 Button {
-                    showPhotoOptions = true
+                    showPhotoActions = true
                 } label: {
                     Image(systemName: "camera.fill")
                         .font(.caption)
@@ -283,7 +270,7 @@ struct ItemDetailSheet: View {
             } else {
                 // Placeholder — discoverable camera icon, tap to add
                 Button {
-                    showPhotoOptions = true
+                    showCamera = true
                 } label: {
                     Color(.systemGray6)
                         .aspectRatio(3/2, contentMode: .fit)

@@ -8,7 +8,6 @@
 
 import SwiftUI
 import SwiftData
-import PhotosUI
 
 struct BrowseLocationView: View {
     let location: Location
@@ -18,11 +17,7 @@ struct BrowseLocationView: View {
 
     // Sheet / dialog state
     @State private var showAddActionSheet = false
-    @State private var addingItem = false
-    @State private var addingLocation = false
-    @State private var showQuickAdd = false
-    @State private var itemToShow: Item? = nil
-    @State private var locationToEdit: Location? = nil
+    @State private var activeSheet: BrowseSheet? = nil
 
     // Location delete state
     @State private var locationToDelete: Location? = nil
@@ -35,10 +30,8 @@ struct BrowseLocationView: View {
     @State private var showItemDeleteAlert = false
 
     // Location photo state
-    @State private var showLocationPhotoOptions = false
-    @State private var showLocationCamera = false
-    @State private var showLocationPhotoPicker = false
-    @State private var selectedLocationPhoto: PhotosPickerItem? = nil
+    @State private var showCamera = false
+    @State private var showLocationPhotoActions = false
 
     // Reorder mode
     @State private var editMode: EditMode = .inactive
@@ -95,6 +88,58 @@ struct BrowseLocationView: View {
         let items    = sortedItems
         let mixed    = !children.isEmpty && !items.isEmpty
 
+        listContent(children: children, items: items, mixed: mixed)
+            .tint(areaTint)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) { breadcrumbHeader }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if !location.childList.isEmpty {
+                        Button(editMode.isEditing ? "Done" : "Reorder") {
+                            withAnimation {
+                                editMode = editMode.isEditing ? .inactive : .active
+                            }
+                        }
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        if location.photo != nil {
+                            showLocationPhotoActions = true
+                        } else {
+                            showCamera = true
+                        }
+                    } label: {
+                        Image(systemName: location.photo != nil ? "camera.fill" : "camera")
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { activeSheet = .quickAdd } label: { Image(systemName: "bolt") }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showAddActionSheet = true } label: { Image(systemName: "plus") }
+                }
+            }
+            .modifier(BrowseLocationSheets(
+                location: location,
+                showAddActionSheet: $showAddActionSheet,
+                activeSheet: $activeSheet,
+                showCamera: $showCamera,
+                showLocationPhotoActions: $showLocationPhotoActions,
+                locationToDelete: $locationToDelete,
+                showLocationDeleteActionSheet: $showLocationDeleteActionSheet,
+                showCascadeConfirm: $showCascadeConfirm,
+                showEmptyLocationDeleteAlert: $showEmptyLocationDeleteAlert,
+                itemToDelete: $itemToDelete,
+                showItemDeleteAlert: $showItemDeleteAlert,
+                moveContentsToParent: moveContentsToParent,
+                cascadeDelete: cascadeDelete,
+                modelContext: modelContext
+            ))
+    }
+
+    @ViewBuilder
+    private func listContent(children: [Location], items: [Item], mixed: Bool) -> some View {
         List {
             if mixed {
                 Section("Spaces") { locationRows(children) }
@@ -112,126 +157,12 @@ struct BrowseLocationView: View {
                 } description: {
                     Text("No items or sub-spaces here yet.")
                 } actions: {
-                    Button("+ Add your first item") { addingItem = true }
+                    Button("+ Add your first item") { activeSheet = .addItem }
                         .buttonStyle(.bordered)
                         .tint(areaTint)
                 }
             }
         }
-        .tint(areaTint)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) { breadcrumbHeader }
-            ToolbarItem(placement: .navigationBarLeading) {
-                if !location.childList.isEmpty {
-                    Button(editMode.isEditing ? "Done" : "Reorder") {
-                        withAnimation {
-                            editMode = editMode.isEditing ? .inactive : .active
-                        }
-                    }
-                }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showLocationPhotoOptions = true } label: {
-                    Image(systemName: location.photo != nil ? "camera.fill" : "camera")
-                }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showQuickAdd = true } label: { Image(systemName: "bolt") }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showAddActionSheet = true } label: { Image(systemName: "plus") }
-            }
-        }
-        // MARK: Add action sheet
-        .confirmationDialog("Add", isPresented: $showAddActionSheet) {
-            Button("Add Space") { addingLocation = true }
-            Button("Add Item")  { addingItem     = true }
-            Button("Cancel", role: .cancel) {}
-        }
-        // MARK: Sheets
-        .sheet(isPresented: $addingItem)     { AddItemSheet(location: location) }
-        .sheet(isPresented: $addingLocation) { AddLocationSheet(parentLocation: location) }
-        .sheet(isPresented: $showQuickAdd)   { QuickAddSheet(location: location) }
-        .sheet(item: $itemToShow)            { ItemDetailSheet(item: $0) }
-        .sheet(item: $locationToEdit)        { LocationDetailSheet(location: $0) }
-        .sheet(isPresented: $showLocationPhotoOptions) {
-            PhotoSourceSheet(
-                hasPhoto: location.photo != nil,
-                onCamera:  { showLocationCamera      = true },
-                onLibrary: { showLocationPhotoPicker = true },
-                onRemove:  { location.photo          = nil  }
-            )
-        }
-        .sheet(isPresented: $showLocationCamera) {
-            CameraCapture { image in
-                if let data = ImageCompressor.compress(image) {
-                    location.photo = data
-                }
-            }
-        }
-        .photosPicker(isPresented: $showLocationPhotoPicker, selection: $selectedLocationPhoto, matching: .images)
-        .onChange(of: selectedLocationPhoto) { _, newItem in
-            guard let newItem else { return }
-            Task {
-                if let data = try? await newItem.loadTransferable(type: Data.self),
-                   let image = UIImage(data: data),
-                   let compressed = ImageCompressor.compress(image) {
-                    location.photo = compressed
-                }
-                selectedLocationPhoto = nil
-            }
-        }
-        // MARK: Location delete — non-empty
-        .confirmationDialog(
-            "Delete \"\(locationToDelete?.name ?? "")\"?",
-            isPresented: $showLocationDeleteActionSheet,
-            titleVisibility: .visible
-        ) {
-            Button("Delete everything inside", role: .destructive) {
-                showCascadeConfirm = true
-            }
-            if let loc = locationToDelete {
-                Button("Move contents to \(loc.parent?.name ?? "Top Level")") {
-                    moveContentsToParent(of: loc)
-                    locationToDelete = nil
-                }
-            }
-            Button("Cancel", role: .cancel) { locationToDelete = nil }
-        }
-        .alert("Are you sure?", isPresented: $showCascadeConfirm) {
-            Button("Delete everything", role: .destructive) {
-                if let loc = locationToDelete {
-                    cascadeDelete(loc)
-                    locationToDelete = nil
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This cannot be undone.")
-        }
-        // MARK: Location delete — empty
-        .alert("Delete \"\(locationToDelete?.name ?? "")\"?",
-               isPresented: $showEmptyLocationDeleteAlert) {
-            Button("Delete", role: .destructive) {
-                if let loc = locationToDelete {
-                    modelContext.delete(loc)
-                    locationToDelete = nil
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: { Text("This cannot be undone.") }
-        // MARK: Item delete
-        .alert("Delete \"\(itemToDelete?.name ?? "")\"?",
-               isPresented: $showItemDeleteAlert) {
-            Button("Delete", role: .destructive) {
-                if let item = itemToDelete {
-                    modelContext.delete(item)
-                    itemToDelete = nil
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: { Text("This cannot be undone.") }
     }
 
     // MARK: - Row builders
@@ -246,7 +177,7 @@ struct BrowseLocationView: View {
                 Button(role: .destructive) { requestDeleteLocation(child) }
                     label: { Label("Delete", systemImage: "trash") }
                     .tint(.red)
-                Button { locationToEdit = child }
+                Button { activeSheet = .locationEdit(child) }
                     label: { Label("Edit", systemImage: "pencil") }
                     .tint(.teal)
             }
@@ -263,7 +194,7 @@ struct BrowseLocationView: View {
     @ViewBuilder
     private func itemRows(_ items: [Item]) -> some View {
         ForEach(items) { item in
-            Button { itemToShow = item } label: {
+            Button { activeSheet = .itemDetail(item) } label: {
                 ItemRow(item: item)
             }
             .buttonStyle(.plain)
@@ -273,7 +204,7 @@ struct BrowseLocationView: View {
                     showItemDeleteAlert = true
                 } label: { Label("Delete", systemImage: "trash") }
                     .tint(.red)
-                Button { itemToShow = item }
+                Button { activeSheet = .itemDetail(item) }
                     label: { Label("Edit", systemImage: "pencil") }
                     .tint(.teal)
             }
@@ -410,5 +341,167 @@ private struct QuickAddSheet: View {
         addedItems.insert(item, at: 0)   // newest at top
         name = ""
         focused = true
+    }
+}
+
+// MARK: - Sheet enum
+
+private enum BrowseSheet: Identifiable, Equatable {
+    static func == (lhs: BrowseSheet, rhs: BrowseSheet) -> Bool { lhs.id == rhs.id }
+    case addItem
+    case addLocation
+    case quickAdd
+    case itemDetail(Item)
+    case locationEdit(Location)
+    case locationPhotoOptions
+    case photosPicker
+
+    var id: String {
+        switch self {
+        case .addItem:                   return "addItem"
+        case .addLocation:               return "addLocation"
+        case .quickAdd:                  return "quickAdd"
+        case .itemDetail(let item):      return "itemDetail-\(item.id)"
+        case .locationEdit(let loc):     return "locationEdit-\(loc.id)"
+        case .locationPhotoOptions:      return "locationPhotoOptions"
+        case .photosPicker:              return "photosPicker"
+        }
+    }
+}
+
+// MARK: - Sheet / alert modifier (extracted to help the compiler type-check BrowseLocationView.body)
+
+private struct BrowseLocationSheets: ViewModifier {
+    let location: Location
+    @Binding var showAddActionSheet: Bool
+    @Binding var activeSheet: BrowseSheet?
+    @Binding var showCamera: Bool
+    @Binding var showLocationPhotoActions: Bool
+    @Binding var locationToDelete: Location?
+    @Binding var showLocationDeleteActionSheet: Bool
+    @Binding var showCascadeConfirm: Bool
+    @Binding var showEmptyLocationDeleteAlert: Bool
+    @Binding var itemToDelete: Item?
+    @Binding var showItemDeleteAlert: Bool
+    let moveContentsToParent: (Location) -> Void
+    let cascadeDelete: (Location) -> Void
+    let modelContext: ModelContext
+
+    func body(content: Content) -> some View {
+        let withAlerts = content.modifier(BrowseLocationAlerts(
+            locationToDelete: $locationToDelete,
+            showLocationDeleteActionSheet: $showLocationDeleteActionSheet,
+            showCascadeConfirm: $showCascadeConfirm,
+            showEmptyLocationDeleteAlert: $showEmptyLocationDeleteAlert,
+            itemToDelete: $itemToDelete,
+            showItemDeleteAlert: $showItemDeleteAlert,
+            moveContentsToParent: moveContentsToParent,
+            cascadeDelete: cascadeDelete,
+            modelContext: modelContext
+        ))
+        withAlerts
+            // MARK: Add action sheet
+            .confirmationDialog("Add", isPresented: $showAddActionSheet) {
+                Button("Add Space") { activeSheet = .addLocation }
+                Button("Add Item")  { activeSheet = .addItem }
+                Button("Cancel", role: .cancel) {}
+            }
+            // MARK: Single sheet presenter
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .addItem:               AddItemSheet(location: location)
+                case .addLocation:           AddLocationSheet(parentLocation: location)
+                case .quickAdd:              QuickAddSheet(location: location)
+                case .itemDetail(let item):  ItemDetailSheet(item: item)
+                case .locationEdit(let loc): LocationDetailSheet(location: loc)
+                case .locationPhotoOptions:  EmptyView()
+                case .photosPicker:          EmptyView()
+                }
+            }
+            .confirmationDialog("Photo", isPresented: $showLocationPhotoActions, titleVisibility: .hidden) {
+                Button("Replace Photo") { showCamera = true }
+                Button("Remove Photo", role: .destructive) { location.photo = nil }
+                Button("Cancel", role: .cancel) {}
+            }
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraView { data in
+                    Task {
+                        let image = UIImage(data: data)
+                        let compressed = image.flatMap { ImageCompressor.compress($0) }
+                        await MainActor.run {
+                            if let compressed { location.photo = compressed }
+                        }
+                    }
+                }
+                .ignoresSafeArea()
+            }
+    }
+}
+
+// MARK: - Delete alert modifier
+
+private struct BrowseLocationAlerts: ViewModifier {
+    @Binding var locationToDelete: Location?
+    @Binding var showLocationDeleteActionSheet: Bool
+    @Binding var showCascadeConfirm: Bool
+    @Binding var showEmptyLocationDeleteAlert: Bool
+    @Binding var itemToDelete: Item?
+    @Binding var showItemDeleteAlert: Bool
+    let moveContentsToParent: (Location) -> Void
+    let cascadeDelete: (Location) -> Void
+    let modelContext: ModelContext
+
+    func body(content: Content) -> some View {
+        content
+            // MARK: Location delete — non-empty
+            .confirmationDialog(
+                "Delete \"\(locationToDelete?.name ?? "")\"?",
+                isPresented: $showLocationDeleteActionSheet,
+                titleVisibility: .visible
+            ) {
+                Button("Delete everything inside", role: .destructive) {
+                    showCascadeConfirm = true
+                }
+                if let loc = locationToDelete {
+                    Button("Move contents to \(loc.parent?.name ?? "Top Level")") {
+                        moveContentsToParent(loc)
+                        locationToDelete = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) { locationToDelete = nil }
+            }
+            .alert("Are you sure?", isPresented: $showCascadeConfirm) {
+                Button("Delete everything", role: .destructive) {
+                    if let loc = locationToDelete {
+                        cascadeDelete(loc)
+                        locationToDelete = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This cannot be undone.")
+            }
+            // MARK: Location delete — empty
+            .alert("Delete \"\(locationToDelete?.name ?? "")\"?",
+                   isPresented: $showEmptyLocationDeleteAlert) {
+                Button("Delete", role: .destructive) {
+                    if let loc = locationToDelete {
+                        modelContext.delete(loc)
+                        locationToDelete = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { Text("This cannot be undone.") }
+            // MARK: Item delete
+            .alert("Delete \"\(itemToDelete?.name ?? "")\"?",
+                   isPresented: $showItemDeleteAlert) {
+                Button("Delete", role: .destructive) {
+                    if let item = itemToDelete {
+                        modelContext.delete(item)
+                        itemToDelete = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { Text("This cannot be undone.") }
     }
 }

@@ -4,7 +4,6 @@
 
 import SwiftUI
 import SwiftData
-import PhotosUI
 
 struct AddLocationSheet: View {
     /// nil = creating a root Area; non-nil = creating a child space inside this location.
@@ -19,8 +18,6 @@ struct AddLocationSheet: View {
     @State private var photoData: Data? = nil
     @State private var photoSkipped = false
     @State private var showCamera = false
-    @State private var showPhotoPicker = false
-    @State private var selectedPhotoItem: PhotosPickerItem? = nil
 
     @FocusState private var nameFocused: Bool
 
@@ -71,24 +68,17 @@ struct AddLocationSheet: View {
                 }
             }
             .onAppear { nameFocused = true }
-            .sheet(isPresented: $showCamera) {
-                CameraCapture { image in
-                    if let data = ImageCompressor.compress(image) {
-                        photoData = data
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraView { data in
+                    Task {
+                        let image = UIImage(data: data)
+                        let compressed = image.flatMap { ImageCompressor.compress($0) }
+                        await MainActor.run {
+                            if let compressed { photoData = compressed }
+                        }
                     }
                 }
-            }
-            .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images)
-            .onChange(of: selectedPhotoItem) { _, newItem in
-                guard let newItem else { return }
-                Task {
-                    if let data = try? await newItem.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data),
-                       let compressed = ImageCompressor.compress(image) {
-                        photoData = compressed
-                    }
-                    selectedPhotoItem = nil
-                }
+                .ignoresSafeArea()
             }
         }
     }
@@ -108,7 +98,7 @@ struct AddLocationSheet: View {
                 .listRowInsets(EdgeInsets())
 
             Button {
-                showPhotoPicker = true
+                showCamera = true
             } label: {
                 Label("Change Photo", systemImage: "camera")
                     .foregroundStyle(.teal)
@@ -118,7 +108,7 @@ struct AddLocationSheet: View {
                 photoData = nil
             }
         } else {
-            // Prompt — camera, library, skip
+            // Prompt — add photo or skip
             VStack(alignment: .center, spacing: 14) {
                 Image(systemName: "camera.fill")
                     .font(.title2)
@@ -128,27 +118,14 @@ struct AddLocationSheet: View {
                     .font(.subheadline)
                     .foregroundStyle(Color(.label))
 
-                HStack(spacing: 12) {
-                    if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                        Button {
-                            showCamera = true
-                        } label: {
-                            Label("Camera", systemImage: "camera")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.teal)
-                    }
-
-                    Button {
-                        showPhotoPicker = true
-                    } label: {
-                        Label("Library", systemImage: "photo")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.teal)
+                Button {
+                    showCamera = true
+                } label: {
+                    Label("Add Photo", systemImage: "photo")
+                        .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.bordered)
+                .tint(.teal)
 
                 Button("Skip") {
                     photoSkipped = true

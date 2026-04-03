@@ -4,7 +4,6 @@
 
 import SwiftUI
 import SwiftData
-import PhotosUI
 
 struct LocationDetailSheet: View {
     @Bindable var location: Location
@@ -17,10 +16,7 @@ struct LocationDetailSheet: View {
     @State private var showDeleteActionSheet = false
     @State private var showCascadeConfirm = false
     @State private var showEmptyDeleteConfirm = false
-    @State private var showPhotoOptions = false
     @State private var showCamera = false
-    @State private var showPhotoPicker = false
-    @State private var selectedPhotoItem: PhotosPickerItem? = nil
 
     static let areaColors: [(name: String, hex: String)] = [
         ("Teal",   "#2A9D8F"), ("Blue",   "#3A86FF"), ("Purple", "#8338EC"),
@@ -49,32 +45,17 @@ struct LocationDetailSheet: View {
                     }
                 )
             }
-            .sheet(isPresented: $showCamera) {
-                CameraCapture { image in
-                    if let data = ImageCompressor.compress(image) {
-                        location.photo = data
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraView { data in
+                    Task {
+                        let image = UIImage(data: data)
+                        let compressed = image.flatMap { ImageCompressor.compress($0) }
+                        await MainActor.run {
+                            if let compressed { location.photo = compressed }
+                        }
                     }
                 }
-            }
-            .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images)
-            .onChange(of: selectedPhotoItem) { _, newItem in
-                guard let newItem else { return }
-                Task {
-                    if let data = try? await newItem.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data),
-                       let compressed = ImageCompressor.compress(image) {
-                        location.photo = compressed
-                    }
-                    selectedPhotoItem = nil
-                }
-            }
-            .sheet(isPresented: $showPhotoOptions) {
-                PhotoSourceSheet(
-                    hasPhoto: location.photo != nil,
-                    onCamera:  { showCamera        = true },
-                    onLibrary: { showPhotoPicker   = true },
-                    onRemove:  { location.photo    = nil  }
-                )
+                .ignoresSafeArea()
             }
             .confirmationDialog(
                 "Delete \"\(location.name)\"?",
@@ -143,14 +124,17 @@ struct LocationDetailSheet: View {
                         .listRowInsets(EdgeInsets())
 
                     Button {
-                        showPhotoOptions = true
+                        showCamera = true
                     } label: {
                         Label("Replace Photo", systemImage: "camera")
                             .foregroundStyle(.teal)
                     }
+                    Button("Remove Photo", role: .destructive) {
+                        location.photo = nil
+                    }
                 } else {
                     Button {
-                        showPhotoOptions = true
+                        showCamera = true
                     } label: {
                         Label("Add Photo", systemImage: "camera")
                             .foregroundStyle(.teal)
