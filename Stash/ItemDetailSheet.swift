@@ -93,6 +93,21 @@ struct ItemDetailSheet: View {
                 // Quantity — toggle always visible; controls expand when tracking is on
                 quantitySection
 
+                // Shopping list — only shown when quantity tracking is on
+                if item.quantity != nil {
+                    Section {
+                        Button {
+                            item.manuallyRestocking.toggle()
+                        } label: {
+                            Label(
+                                item.manuallyRestocking ? "Remove from shopping list" : "Add to shopping list",
+                                systemImage: item.manuallyRestocking ? "cart.badge.minus" : "cart.badge.plus"
+                            )
+                            .foregroundStyle(item.manuallyRestocking ? Color(.secondaryLabel) : .teal)
+                        }
+                    }
+                }
+
                 // Expiry
                 Section {
                     Toggle("Track expiry date", isOn: Binding(

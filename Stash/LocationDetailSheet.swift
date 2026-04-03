@@ -109,6 +109,7 @@ struct LocationDetailSheet: View {
                 Section("Colour") {
                     colorSwatches
                         .padding(.vertical, 4)
+                    ColorPicker("Custom colour", selection: colorPickerBinding, supportsOpacity: false)
                 }
             }
 
@@ -161,6 +162,20 @@ struct LocationDetailSheet: View {
                 }
             }
         }
+    }
+
+    // MARK: - Colour picker binding
+
+    private var colorPickerBinding: Binding<Color> {
+        Binding(
+            get: {
+                guard let hex = location.color else { return Color(hex: "#808080") ?? .gray }
+                return Color(hex: hex) ?? .teal
+            },
+            set: { newColor in
+                location.color = newColor.toHex()
+            }
+        )
     }
 
     // MARK: - Colour swatches

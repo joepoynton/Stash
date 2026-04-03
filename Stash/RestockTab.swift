@@ -82,6 +82,7 @@ struct RestockTab: View {
 
     private var restockItems: [Item] {
         allItems.filter { item in
+            if item.manuallyRestocking { return true }
             guard let qty = item.quantity, let min = item.minimumQuantity else { return false }
             return qty < min
         }
@@ -179,21 +180,28 @@ private struct RestockRow: View {
 
     @ViewBuilder
     private var statusBadge: some View {
-        switch item.orderStatus {
-        case .onOrder:
-            HStack(spacing: 3) {
-                Image(systemName: "shippingbox")
-                    .font(.caption2)
-                Text("On Order")
-                    .font(.caption)
-                    .fontWeight(.medium)
-            }
-            .foregroundStyle(.teal)
-        default:
-            Text("Low")
+        if item.manuallyRestocking && item.orderStatus != .onOrder {
+            Text("Wanted")
                 .font(.caption)
                 .fontWeight(.medium)
-                .foregroundStyle(.orange)
+                .foregroundStyle(.teal)
+        } else {
+            switch item.orderStatus {
+            case .onOrder:
+                HStack(spacing: 3) {
+                    Image(systemName: "shippingbox")
+                        .font(.caption2)
+                    Text("On Order")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+                .foregroundStyle(.teal)
+            default:
+                Text("Low")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.orange)
+            }
         }
     }
 }

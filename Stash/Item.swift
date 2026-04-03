@@ -36,6 +36,7 @@ final class Item {
     var lastVerified: Date = Date()
     var isStarred: Bool = false  // Reserved for v1.1. Always false in v1.
     var neverStale: Bool = false // When true, item is exempt from stale/unverified checking.
+    var manuallyRestocking: Bool = false // User-pushed to Restock regardless of stock level.
     var isOutOfPlace: Bool = false     // Item is temporarily not in its home location.
     var outOfPlaceNote: String?        // Optional note e.g. "Lent to Dad", "In use in kitchen".
     var location: Location?      // Optional for CloudKit compatibility. Required in app logic.
@@ -98,6 +99,7 @@ final class Item {
     func markAsArrived(count: Int) {
         quantity = (quantity ?? 0) + count
         orderStatusRaw = OrderStatus.normal.rawValue
+        manuallyRestocking = false
         lastVerified = Date()
     }
 }
