@@ -248,11 +248,42 @@ private struct AdjustMinimumSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var minimum: Int = 1
 
+    @State private var editingMinimum = false
+    @State private var minimumEntryText = ""
+    @FocusState private var minimumFieldFocused: Bool
+
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Stepper("Minimum: \(minimum)", value: $minimum, in: 1...999)
+                    HStack {
+                        Button {
+                            guard minimum > 1 else { return }
+                            minimum -= 1
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(minimum <= 1 ? Color(.tertiaryLabel) : .teal)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(minimum <= 1)
+
+                        Spacer()
+
+                        minimumDisplay
+
+                        Spacer()
+
+                        Button {
+                            minimum += 1
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(.teal)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.vertical, 4)
                 } footer: {
                     if let qty = item.quantity {
                         if qty < minimum {
@@ -275,12 +306,54 @@ private struct AdjustMinimumSheet: View {
                         dismiss()
                     }
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    if editingMinimum {
+                        Button("Done") { commitMinimumEntry() }
+                    }
+                }
+            }
+            .onChange(of: minimumFieldFocused) { _, isFocused in
+                if !isFocused && editingMinimum { commitMinimumEntry() }
             }
         }
         .presentationDetents([.medium])
         .onAppear {
             minimum = item.minimumQuantity ?? 1
         }
+    }
+
+    @ViewBuilder
+    private var minimumDisplay: some View {
+        if editingMinimum {
+            TextField("1", text: $minimumEntryText)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.center)
+                .font(.title.monospacedDigit())
+                .focused($minimumFieldFocused)
+                .frame(minWidth: 60)
+        } else {
+            Text("\(minimum)")
+                .font(.title.monospacedDigit())
+                .foregroundStyle(Color(.label))
+                .underline(color: Color(.tertiaryLabel))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    minimumEntryText = "\(minimum)"
+                    editingMinimum = true
+                    minimumFieldFocused = true
+                }
+        }
+    }
+
+    private func commitMinimumEntry() {
+        guard editingMinimum else { return }
+        if let value = Int(minimumEntryText), value >= 1 {
+            minimum = value
+        }
+        editingMinimum = false
+        minimumEntryText = ""
+        minimumFieldFocused = false
     }
 }
 

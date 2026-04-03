@@ -28,6 +28,11 @@ struct ItemDetailSheet: View {
     @State private var quantityEntryText = ""
     @FocusState private var quantityFieldFocused: Bool
 
+    // Minimum quantity editing
+    @State private var editingMinimum = false
+    @State private var minimumEntryText = ""
+    @FocusState private var minimumFieldFocused: Bool
+
     var body: some View {
         NavigationStack {
             Form {
@@ -170,14 +175,16 @@ struct ItemDetailSheet: View {
                     Spacer()
                     if editingQuantity {
                         Button("Done") { commitQuantityEntry() }
+                    } else if editingMinimum {
+                        Button("Done") { commitMinimumEntry() }
                     }
                 }
             }
             .onChange(of: quantityFieldFocused) { _, isFocused in
-                // Commit if focus moves away from the quantity field
-                if !isFocused && editingQuantity {
-                    commitQuantityEntry()
-                }
+                if !isFocused && editingQuantity { commitQuantityEntry() }
+            }
+            .onChange(of: minimumFieldFocused) { _, isFocused in
+                if !isFocused && editingMinimum { commitMinimumEntry() }
             }
             .sheet(isPresented: $showMoveSheet) {
                 LocationPickerSheet(
@@ -350,14 +357,36 @@ struct ItemDetailSheet: View {
                 }
 
                 // Minimum
-                Stepper(
-                    "Minimum: \(item.minimumQuantity ?? 0)",
-                    value: Binding(
-                        get: { item.minimumQuantity ?? 0 },
-                        set: { item.minimumQuantity = $0 > 0 ? $0 : nil }
-                    ),
-                    in: 0...9999
-                )
+                HStack {
+                    Text("Minimum")
+                        .foregroundStyle(Color(.label))
+
+                    Spacer()
+
+                    Button {
+                        let current = item.minimumQuantity ?? 0
+                        guard current > 0 else { return }
+                        item.minimumQuantity = current - 1 > 0 ? current - 1 : nil
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle((item.minimumQuantity ?? 0) == 0 ? Color(.tertiaryLabel) : .teal)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled((item.minimumQuantity ?? 0) == 0)
+
+                    minimumDisplay
+
+                    Button {
+                        item.minimumQuantity = (item.minimumQuantity ?? 0) + 1
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.teal)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.vertical, 4)
 
                 // Stock status badge
                 switch item.orderStatus {
@@ -408,6 +437,30 @@ struct ItemDetailSheet: View {
         }
     }
 
+    // The centre of the minimum +/- row. Tappable to enter a value directly.
+    @ViewBuilder
+    private var minimumDisplay: some View {
+        if editingMinimum {
+            TextField("0", text: $minimumEntryText)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.center)
+                .font(.title.monospacedDigit())
+                .focused($minimumFieldFocused)
+                .frame(minWidth: 60)
+        } else {
+            Text("\(item.minimumQuantity ?? 0)")
+                .font(.title.monospacedDigit())
+                .foregroundStyle(Color(.label))
+                .underline(color: Color(.tertiaryLabel))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    minimumEntryText = "\(item.minimumQuantity ?? 0)"
+                    editingMinimum = true
+                    minimumFieldFocused = true
+                }
+        }
+    }
+
     // MARK: - Helpers
 
     private func commitQuantityEntry() {
@@ -418,6 +471,16 @@ struct ItemDetailSheet: View {
         editingQuantity = false
         quantityEntryText = ""
         quantityFieldFocused = false
+    }
+
+    private func commitMinimumEntry() {
+        guard editingMinimum else { return }
+        if let value = Int(minimumEntryText) {
+            item.minimumQuantity = value > 0 ? value : nil
+        }
+        editingMinimum = false
+        minimumEntryText = ""
+        minimumFieldFocused = false
     }
 
     private var unitBinding: Binding<String> {

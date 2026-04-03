@@ -737,7 +737,14 @@ The "Stash" text in the navigation bar is currently plain system text. A future 
 ## APPENDIX D — Future UX Improvements (Post v1)
 
 **Rapid item entry ("quick add") mode**
-A frictionless way to populate a location quickly without navigating into each item's detail. The proposed interaction: within a Browse location, a "Quick Add" button opens a minimal input where the user types a name and hits return/enter — the item is created instantly with no other fields, and the cursor returns to the input field ready for the next item. The user can then tap into any of the created items afterwards to fill in quantity, notes, expiry etc. Goal is to make bulk population of a new space (e.g. unpacking a box) as fast as possible. Consider for v1.1.
+A frictionless way to populate a location quickly without navigating into each item's detail. The proposed interaction: within a Browse location, a "Quick Add" button opens a minimal input where the user types a name and hits return/enter — the item is created instantly with no other fields, and the cursor returns to the input field ready for the next item. The user can then tap into any of the created items afterwards to fill in quantity, notes, expiry etc. Built in v1.
+
+**Spatial onboarding / "Map a space" mode**
+A photo-first location creation flow designed to solve the blank canvas problem. The hardest part of starting an inventory is building the location structure — people stall because they can't visualise the tree before they've built it. This feature flips that by capturing physical reality first, then labelling it.
+
+Proposed interaction: a "Map a space" button within a Browse area opens a multi-photo capture mode. The user walks through a physical space (e.g. a kitchen) taking a photo of each cupboard, unit, larder, fridge etc. Each photo instantly creates a child location inside the current area with the photo already attached, auto-named "New space 1", "New space 2" etc. After capturing, the user sees a grid of all photos just taken and renames each one before confirming. The result: the entire location structure exists with photos attached, ready to populate with items.
+
+This is more powerful than suggestion chips for onboarding because it is tactile, visual, and mirrors how people actually think about physical spaces. Consider for v1.1 as a premium onboarding feature.
 
 ---
 
