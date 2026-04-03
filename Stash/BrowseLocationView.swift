@@ -16,7 +16,6 @@ struct BrowseLocationView: View {
     @Environment(\.modelContext) private var modelContext
 
     // Sheet / dialog state
-    @State private var showAddActionSheet = false
     @State private var activeSheet: BrowseSheet? = nil
 
     // Location delete state
@@ -93,36 +92,46 @@ struct BrowseLocationView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) { breadcrumbHeader }
-                ToolbarItem(placement: .navigationBarLeading) {
-                    if !location.childList.isEmpty {
-                        Button(editMode.isEditing ? "Done" : "Reorder") {
-                            withAnimation {
-                                editMode = editMode.isEditing ? .inactive : .active
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if editMode.isEditing {
+                        Button("Done") {
+                            withAnimation { editMode = .inactive }
+                        }
+                    } else {
+                        Menu {
+                            Button { activeSheet = .quickAdd } label: {
+                                Label("Quick Add", systemImage: "bolt")
                             }
+                            Button { activeSheet = .addLocation } label: {
+                                Label("Add Space", systemImage: "folder.badge.plus")
+                            }
+                            Button { activeSheet = .addItem } label: {
+                                Label("Add Item", systemImage: "plus.square")
+                            }
+                            Button {
+                                if location.photo != nil {
+                                    showLocationPhotoActions = true
+                                } else {
+                                    showCamera = true
+                                }
+                            } label: {
+                                Label("Add Photo", systemImage: "camera")
+                            }
+                            if !location.childList.isEmpty {
+                                Button {
+                                    withAnimation { editMode = .active }
+                                } label: {
+                                    Label("Reorder Spaces", systemImage: "arrow.up.arrow.down")
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "plus")
                         }
                     }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        if location.photo != nil {
-                            showLocationPhotoActions = true
-                        } else {
-                            showCamera = true
-                        }
-                    } label: {
-                        Image(systemName: location.photo != nil ? "camera.fill" : "camera")
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { activeSheet = .quickAdd } label: { Image(systemName: "bolt") }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { showAddActionSheet = true } label: { Image(systemName: "plus") }
                 }
             }
             .modifier(BrowseLocationSheets(
                 location: location,
-                showAddActionSheet: $showAddActionSheet,
                 activeSheet: $activeSheet,
                 showCamera: $showCamera,
                 showLocationPhotoActions: $showLocationPhotoActions,
@@ -373,7 +382,6 @@ private enum BrowseSheet: Identifiable, Equatable {
 
 private struct BrowseLocationSheets: ViewModifier {
     let location: Location
-    @Binding var showAddActionSheet: Bool
     @Binding var activeSheet: BrowseSheet?
     @Binding var showCamera: Bool
     @Binding var showLocationPhotoActions: Bool
@@ -400,12 +408,6 @@ private struct BrowseLocationSheets: ViewModifier {
             modelContext: modelContext
         ))
         withAlerts
-            // MARK: Add action sheet
-            .confirmationDialog("Add", isPresented: $showAddActionSheet) {
-                Button("Add Space") { activeSheet = .addLocation }
-                Button("Add Item")  { activeSheet = .addItem }
-                Button("Cancel", role: .cancel) {}
-            }
             // MARK: Single sheet presenter
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
