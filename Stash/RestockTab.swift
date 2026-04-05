@@ -5,6 +5,7 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 // MARK: - RestockTab
 
@@ -58,6 +59,7 @@ struct RestockTab: View {
                                     .tint(.teal)
                                 } else {
                                     Button("Mark as Ordered") {
+                                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                                         item.markAsOrdered()
                                     }
                                     .tint(.teal)
@@ -239,6 +241,7 @@ private struct ArrivalSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Confirm") {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         item.markAsArrived(count: arrivedCount)
                         dismiss()
                     }
@@ -371,8 +374,10 @@ private struct AdjustMinimumSheet: View {
 private func rootAncestor(of location: Location?) -> Location? {
     guard let location else { return nil }
     var current = location
-    while let parent = current.parent {
+    var depth = 0
+    while let parent = current.parent, depth < 50 {
         current = parent
+        depth += 1
     }
     return current
 }
@@ -382,9 +387,11 @@ private func locationPath(for location: Location?) -> String {
     guard let location else { return "" }
     var parts: [String] = []
     var current: Location? = location
-    while let loc = current {
+    var depth = 0
+    while let loc = current, depth < 50 {
         parts.insert(loc.name, at: 0)
         current = loc.parent
+        depth += 1
     }
     return parts.joined(separator: " › ")
 }

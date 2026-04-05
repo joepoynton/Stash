@@ -173,6 +173,7 @@ struct ItemDetailSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle(item.name)
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
@@ -496,9 +497,11 @@ struct ItemDetailSheet: View {
         guard let location = item.location else { return "No location" }
         var parts: [String] = []
         var current: Location? = location
-        while let loc = current {
+        var depth = 0
+        while let loc = current, depth < 50 {
             parts.insert(loc.name, at: 0)
             current = loc.parent
+            depth += 1
         }
         return parts.joined(separator: " › ")
     }

@@ -34,12 +34,13 @@ struct AreaCard: View {
         ZStack(alignment: .bottomLeading) {
             backgroundLayer
 
-            // Gradient scrim on photo cards for text legibility
+            // Gradient scrim on photo cards — runs full height so bright sky/pale
+            // photos remain legible at the bottom without a harsh flat dimming band.
             if hasPhoto {
                 LinearGradient(
-                    colors: [.black.opacity(0.55), .clear],
+                    colors: [.black.opacity(0.6), .black.opacity(0.1)],
                     startPoint: .bottom,
-                    endPoint: .center
+                    endPoint: .top
                 )
             }
 
@@ -80,7 +81,6 @@ struct AreaCard: View {
                     .frame(width: geo.size.width, height: geo.size.height)
                     .clipped()
             }
-            .overlay(Color.black.opacity(0.4))
         } else if let hexColor = area.color, let color = Color(hex: hexColor) {
             // Solid tinted background — icon in white
             color.overlay {

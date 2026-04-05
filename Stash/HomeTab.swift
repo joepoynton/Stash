@@ -457,9 +457,11 @@ private struct NeedsAttentionRow: View {
         guard let location = item.location else { return "" }
         var parts: [String] = []
         var current: Location? = location
-        while let loc = current {
+        var depth = 0
+        while let loc = current, depth < 50 {
             parts.insert(loc.name, at: 0)
             current = loc.parent
+            depth += 1
         }
         return parts.joined(separator: " › ")
     }
@@ -552,9 +554,11 @@ private struct RecentlyAccessedRow: View {
         guard let location = item.location else { return "" }
         var parts: [String] = []
         var current: Location? = location
-        while let loc = current {
+        var depth = 0
+        while let loc = current, depth < 50 {
             parts.insert(loc.name, at: 0)
             current = loc.parent
+            depth += 1
         }
         return parts.joined(separator: " › ")
     }

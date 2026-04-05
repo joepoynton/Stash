@@ -16,6 +16,7 @@ struct LocationDetailSheet: View {
     @State private var showDeleteActionSheet = false
     @State private var showCascadeConfirm = false
     @State private var showEmptyDeleteConfirm = false
+    @State private var showCycleAlert = false
     @State private var showCamera = false
 
     static let areaColors: [(name: String, hex: String)] = [
@@ -41,9 +42,20 @@ struct LocationDetailSheet: View {
                     allowTopLevel: true,
                     expandedIDs: $pickerExpandedIDs,
                     onSelect: { newParent in
+                        // Cycle guard: belt-and-suspenders check in case the picker's
+                        // exclusion list was bypassed.
+                        if let newParent, selfAndDescendantIDs.contains(newParent.id) {
+                            showCycleAlert = true
+                            return
+                        }
                         location.parent = newParent
                     }
                 )
+            }
+            .alert("Cannot move here", isPresented: $showCycleAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("A space cannot be moved inside itself.")
             }
             .fullScreenCover(isPresented: $showCamera) {
                 CameraView { data in

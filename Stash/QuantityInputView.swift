@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct QuantityInputView: View {
     let item: Item
@@ -15,6 +16,7 @@ struct QuantityInputView: View {
         if let qty = item.quantity {
             HStack(spacing: 6) {
                 Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     item.decrementQuantity()
                 } label: {
                     Image(systemName: "minus")
@@ -40,6 +42,7 @@ struct QuantityInputView: View {
                 .frame(minWidth: 28)
 
                 Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     item.incrementQuantity()
                 } label: {
                     Image(systemName: "plus")
