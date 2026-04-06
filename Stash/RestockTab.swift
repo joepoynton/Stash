@@ -136,13 +136,17 @@ private struct AreaGroup: Identifiable {
 private struct AreaSectionHeader: View {
     let area: Location?
 
+    private var areaColor: Color {
+        area?.color.flatMap { Color(hex: $0) } ?? .teal
+    }
+
     var body: some View {
         HStack(spacing: 6) {
             if let icon = area?.icon {
-                Image(systemName: icon)
-                    .font(.caption)
+                LocationIconView(icon: icon, font: .caption, color: areaColor)
             }
             Text(area?.name ?? "Unknown")
+                .foregroundStyle(areaColor)
         }
     }
 }

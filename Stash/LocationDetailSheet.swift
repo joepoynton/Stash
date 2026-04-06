@@ -113,11 +113,12 @@ struct LocationDetailSheet: View {
                 TextField("Name", text: $location.name)
             }
 
+            Section("Icon") {
+                SymbolPickerView(selected: $location.icon)
+                    .padding(.vertical, 4)
+            }
+
             if location.isRoot {
-                Section("Icon") {
-                    SymbolPickerView(selected: $location.icon)
-                        .padding(.vertical, 4)
-                }
                 Section("Colour") {
                     colorSwatches
                         .padding(.vertical, 4)

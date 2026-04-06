@@ -24,3 +24,44 @@ extension Color {
         return String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
     }
 }
+
+// MARK: - Root area colour helper
+
+/// Walks the ancestor chain from `location` to the root Area and returns
+/// that Area's assigned colour. Returns nil when no colour is set, letting
+/// call sites decide the fallback (usually `.teal`).
+func rootAreaColor(for location: Location?) -> Color? {
+    guard let location else { return nil }
+    var current: Location? = location
+    while let parent = current?.parent {
+        current = parent
+    }
+    guard let hex = current?.color else { return nil }
+    return Color(hex: hex)
+}
+
+// MARK: - Icon rendering helper
+
+/// Renders a location icon string as either an SF Symbol or a plain Text emoji.
+///
+/// SF Symbol names are all-ASCII (e.g. "archivebox.fill"). Emoji and other
+/// Unicode characters fail the ASCII check and are rendered as `Text` instead.
+struct LocationIconView: View {
+    let icon: String
+    var font: Font = .title3
+    var color: Color = .teal
+
+    /// True when the icon string is a valid SF Symbol name (all-ASCII).
+    var isSFSymbol: Bool { icon.allSatisfy { $0.isASCII } }
+
+    var body: some View {
+        if isSFSymbol {
+            Image(systemName: icon)
+                .font(font)
+                .foregroundStyle(color)
+        } else {
+            Text(icon)
+                .font(font)
+        }
+    }
+}

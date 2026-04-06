@@ -13,7 +13,7 @@ struct AddLocationSheet: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var name = ""
-    @State private var selectedIcon: String? = "archivebox.fill"
+    @State private var selectedIcon: String? = nil
     @State private var selectedColorHex: String? = nil
     @State private var photoData: Data? = nil
     @State private var photoSkipped = false
@@ -37,12 +37,12 @@ struct AddLocationSheet: View {
                         .focused($nameFocused)
                 }
 
-                if isRoot {
-                    Section("Icon") {
-                        SymbolPickerView(selected: $selectedIcon)
-                            .padding(.vertical, 4)
-                    }
+                Section("Icon") {
+                    SymbolPickerView(selected: $selectedIcon)
+                        .padding(.vertical, 4)
+                }
 
+                if isRoot {
                     Section("Colour") {
                         colorSwatches
                             .padding(.vertical, 4)
@@ -68,7 +68,10 @@ struct AddLocationSheet: View {
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
-            .onAppear { nameFocused = true }
+            .onAppear {
+                nameFocused = true
+                if isRoot && selectedIcon == nil { selectedIcon = "archivebox.fill" }
+            }
             .fullScreenCover(isPresented: $showCamera) {
                 CameraView { data in
                     Task {
@@ -199,7 +202,7 @@ struct AddLocationSheet: View {
         guard !trimmed.isEmpty else { return }
         let location = Location(
             name: trimmed,
-            icon: isRoot ? selectedIcon : nil,
+            icon: selectedIcon,
             color: isRoot ? selectedColorHex : nil,
             parent: parentLocation
         )

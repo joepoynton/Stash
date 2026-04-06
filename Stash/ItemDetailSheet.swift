@@ -62,7 +62,7 @@ struct ItemDetailSheet: View {
                             .foregroundStyle(Color(.secondaryLabel))
                             .frame(width: 24)
                         Text(locationPath)
-                            .foregroundStyle(Color(.label))
+                            .foregroundStyle(rootAreaColor(for: item.location) ?? Color(.label))
                     }
                     Button {
                         showMoveSheet = true

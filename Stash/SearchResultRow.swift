@@ -12,6 +12,10 @@ struct SearchResultRow: View {
     let item: Item
     let onTap: () -> Void
 
+    private var areaColor: Color {
+        rootAreaColor(for: item.location) ?? .teal
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             // Name + location path — tap opens detail sheet
@@ -24,7 +28,7 @@ struct SearchResultRow: View {
                     if !locationPath.isEmpty {
                         Text(locationPath)
                             .font(.caption)
-                            .foregroundStyle(Color(.secondaryLabel))
+                            .foregroundStyle(areaColor)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -3,9 +3,10 @@
 //  Stash
 //
 //  3:2 landscape card for a root Area. Shown in the Home tab grid.
-//  - Photo background (if set) with 40% black overlay
+//  - Photo background (if set) with gradient scrim for legibility
 //  - Or solid tinted/neutral background with centred icon
 //  - Name at bottom-left, low-stock dot at bottom-right
+//  - When both photo and icon are set, a small icon badge appears bottom-left
 //
 
 import SwiftUI
@@ -44,13 +45,18 @@ struct AreaCard: View {
                 )
             }
 
-            // Bottom bar: name + low-stock dot
-            HStack(alignment: .bottom, spacing: 0) {
+            // Bottom bar: icon badge (optional) + name + low-stock dot
+            HStack(alignment: .bottom, spacing: 6) {
+                // Icon badge — shown only when the card has a photo AND an icon.
+                // Reinforces area identity even when a photo is the primary visual.
+                if hasPhoto, let icon = area.icon {
+                    iconBadge(icon: icon)
+                }
+
                 Text(area.name)
                     .font(.headline)
                     .foregroundStyle(nameTextColor)
                     .lineLimit(2)
-                    .padding(.leading, 10)
                     .padding(.bottom, 8)
 
                 Spacer(minLength: 4)
@@ -63,10 +69,26 @@ struct AreaCard: View {
                         .padding(.bottom, 10)
                 }
             }
+            .padding(.leading, 10)
         }
         .aspectRatio(3/2, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
+
+    // MARK: - Icon badge (28pt circle, area colour background, icon in white)
+
+    @ViewBuilder
+    private func iconBadge(icon: String) -> some View {
+        ZStack {
+            Circle()
+                .fill(tintColor)
+                .frame(width: 28, height: 28)
+            LocationIconView(icon: icon, font: .caption2, color: .white)
+        }
+        .padding(.bottom, 8)
+    }
+
+    // MARK: - Background layer
 
     @ViewBuilder
     private var backgroundLayer: some View {
@@ -84,16 +106,12 @@ struct AreaCard: View {
         } else if let hexColor = area.color, let color = Color(hex: hexColor) {
             // Solid tinted background — icon in white
             color.overlay {
-                Image(systemName: area.icon ?? "archivebox.fill")
-                    .font(.system(size: 36, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.85))
+                LocationIconView(icon: area.icon ?? "archivebox.fill", font: .system(size: 36, weight: .medium), color: .white.opacity(0.85))
             }
         } else {
             // Neutral background — icon in secondary label colour
             Color(.secondarySystemBackground).overlay {
-                Image(systemName: area.icon ?? "archivebox.fill")
-                    .font(.system(size: 36, weight: .medium))
-                    .foregroundStyle(Color(.secondaryLabel))
+                LocationIconView(icon: area.icon ?? "archivebox.fill", font: .system(size: 36, weight: .medium), color: Color(.secondaryLabel))
             }
         }
     }

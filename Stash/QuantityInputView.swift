@@ -5,6 +5,10 @@
 //  Compact inline quantity control for Browse rows and search results.
 //  Shows − / number / + with small gray circle buttons.
 //
+//  Haptic: a single UIImpactFeedbackGenerator is stored as @State so it
+//  persists across re-renders and can be prepared once on appear, keeping
+//  the taptic engine warm for low-latency feedback on subsequent taps.
+//
 
 import SwiftUI
 import UIKit
@@ -12,11 +16,13 @@ import UIKit
 struct QuantityInputView: View {
     let item: Item
 
+    @State private var haptic = UIImpactFeedbackGenerator(style: .light)
+
     var body: some View {
         if let qty = item.quantity {
             HStack(spacing: 6) {
                 Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    haptic.impactOccurred()
                     item.decrementQuantity()
                 } label: {
                     Image(systemName: "minus")
@@ -42,7 +48,7 @@ struct QuantityInputView: View {
                 .frame(minWidth: 28)
 
                 Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    haptic.impactOccurred()
                     item.incrementQuantity()
                 } label: {
                     Image(systemName: "plus")
@@ -54,6 +60,7 @@ struct QuantityInputView: View {
                 }
                 .buttonStyle(.plain)
             }
+            .onAppear { haptic.prepare() }
         }
     }
 }

@@ -409,44 +409,56 @@ private struct NeedsAttentionRow: View {
     let onTap: () -> Void
     let onNeverStale: (() -> Void)?
 
+    /// Colour of the root area this item belongs to — used for the left accent bar.
+    private var accentColor: Color {
+        rootAreaColor(for: item.location) ?? .teal
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.name)
-                        .font(.body)
-                        .foregroundStyle(Color(.label))
-                    if !locationPath.isEmpty {
-                        Text(locationPath)
-                            .font(.caption)
-                            .foregroundStyle(Color(.secondaryLabel))
+        HStack(spacing: 0) {
+            // Left accent bar tinted in the item's root area colour
+            Rectangle()
+                .fill(accentColor)
+                .frame(width: 4)
+
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.name)
+                            .font(.body)
+                            .foregroundStyle(Color(.label))
+                        if !locationPath.isEmpty {
+                            Text(locationPath)
+                                .font(.caption)
+                                .foregroundStyle(Color(.secondaryLabel))
+                        }
                     }
-                }
 
-                Spacer()
+                    Spacer()
 
-                Text(reason.label)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(reason.color)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(reason.color.opacity(0.12))
-                    .clipShape(Capsule())
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, onNeverStale != nil ? 6 : 10)
-
-            if let action = onNeverStale {
-                Button(action: action) {
-                    Text("Always verified")
+                    Text(reason.label)
                         .font(.caption)
-                        .foregroundStyle(.teal)
+                        .fontWeight(.medium)
+                        .foregroundStyle(reason.color)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(reason.color.opacity(0.12))
+                        .clipShape(Capsule())
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 10)
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .padding(.bottom, onNeverStale != nil ? 6 : 10)
+
+                if let action = onNeverStale {
+                    Button(action: action) {
+                        Text("Always verified")
+                            .font(.caption)
+                            .foregroundStyle(.teal)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 10)
+                }
             }
         }
         .contentShape(Rectangle())
@@ -473,13 +485,19 @@ private struct SearchLocationRow: View {
     let location: Location
     let onTap: () -> Void
 
+    private var areaColor: Color {
+        rootAreaColor(for: location) ?? .teal
+    }
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
-                Image(systemName: location.icon ?? "folder.fill")
-                    .font(.body)
-                    .foregroundStyle(location.icon != nil ? .teal : Color(.secondaryLabel))
-                    .frame(width: 28)
+                LocationIconView(
+                    icon: location.icon ?? "folder.fill",
+                    font: .body,
+                    color: location.icon != nil ? areaColor : Color(.secondaryLabel)
+                )
+                .frame(width: 28)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(location.name)

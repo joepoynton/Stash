@@ -18,13 +18,15 @@ struct LocationRow: View {
         return parts.joined(separator: " · ")
     }
 
+    /// Walks up to the root ancestor to get the area colour.
+    /// Returns nil when no root colour is assigned (caller falls back to .teal or gray).
     private var areaColor: Color? {
-        location.color.flatMap { Color(hex: $0) }
+        rootAreaColor(for: location)
     }
 
     var body: some View {
         HStack(spacing: 12) {
-            // Thumbnail: photo (Phase 6) or icon
+            // Thumbnail: photo or icon (SF Symbol or emoji)
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(areaColor?.opacity(0.15) ?? Color(.systemGray5))
@@ -37,13 +39,12 @@ struct LocationRow: View {
                         .frame(width: 44, height: 44)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 } else if let icon = location.icon {
-                    Image(systemName: icon)
-                        .font(.title3)
-                        .foregroundStyle(areaColor ?? .teal)
+                    LocationIconView(icon: icon, font: .title3, color: areaColor ?? .teal)
                 } else {
+                    // Default folder icon tinted in the area colour
                     Image(systemName: "folder.fill")
                         .font(.title3)
-                        .foregroundStyle(Color(.secondaryLabel))
+                        .foregroundStyle(areaColor ?? .teal)
                 }
             }
 
