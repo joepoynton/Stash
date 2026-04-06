@@ -269,6 +269,26 @@ struct HomeTab: View {
                                 Label("Mark as Ordered", systemImage: "shippingbox.fill")
                             }
                             .tint(.orange)
+                        } else if entry.reason == .outOfPlace {
+                            Button {
+                                entry.item.returnToPlace()
+                            } label: {
+                                Label("Return to Place", systemImage: "arrow.down.circle.fill")
+                            }
+                            .tint(.teal)
+                        } else if entry.reason == .notVerified {
+                            Button {
+                                entry.item.markAsVerified()
+                            } label: {
+                                Label("Mark as Verified", systemImage: "checkmark.circle.fill")
+                            }
+                            .tint(.teal)
+                            Button {
+                                entry.item.neverStale = true
+                            } label: {
+                                Label("Always Verified", systemImage: "checkmark.shield.fill")
+                            }
+                            .tint(.teal)
                         }
                     }
                 }

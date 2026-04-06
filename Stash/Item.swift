@@ -96,6 +96,12 @@ final class Item {
     }
 
     /// Records arrival of `count` units. Resets order status. Updates lastVerified.
+    func returnToPlace() {
+        isOutOfPlace = false
+        outOfPlaceNote = nil
+        lastVerified = Date()
+    }
+
     func markAsArrived(count: Int) {
         quantity = (quantity ?? 0) + count
         orderStatusRaw = OrderStatus.normal.rawValue
