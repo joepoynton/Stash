@@ -1,0 +1,46 @@
+{
+  "identifier" : "48A2B1C3-D4E5-6F78-90AB-CDEF01234567",
+  "nonConsumableIAP" : [
+    {
+      "displayPrice" : "0.99",
+      "familyShareable" : false,
+      "internalID" : "A1B2C3D4-E5F6-7890-ABCD-EF0123456789",
+      "introductoryOffer" : null,
+      "localizations" : [
+        {
+          "description" : "Unlock unlimited items, photos on items and locations, and JSON data export.",
+          "displayName" : "Stash Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.poynt.stash.pro",
+      "referenceName" : "Stash Pro",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_storeKitErrors" : [
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Load Products"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Purchase"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Restore Purchases"
+      }
+    ],
+    "_storefront" : "USA",
+    "_storefrontCountryCode" : "USA"
+  },
+  "version" : {
+    "major" : 1,
+    "minor" : 0
+  }
+}

@@ -11,13 +11,17 @@ struct AddLocationSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(StoreKitManager.self) private var storeKit
 
     @State private var name = ""
+    @State private var showPhotoUpgradePrompt = false
     @State private var selectedIcon: String? = nil
     @State private var selectedColorHex: String? = nil
     @State private var photoData: Data? = nil
     @State private var photoSkipped = false
     @State private var showCamera = false
+    @State private var showLibraryPicker = false
+    @State private var showPhotoSourceOptions = false
 
     @FocusState private var nameFocused: Bool
 
@@ -84,6 +88,26 @@ struct AddLocationSheet: View {
                 }
                 .ignoresSafeArea()
             }
+            .confirmationDialog("Photo", isPresented: $showPhotoSourceOptions, titleVisibility: .hidden) {
+                Button("Take Photo") { showCamera = true }
+                Button("Choose from Library") { showLibraryPicker = true }
+                Button("Cancel", role: .cancel) {}
+            }
+            .sheet(isPresented: $showLibraryPicker) {
+                LibraryPickerView { data in
+                    Task {
+                        let image = UIImage(data: data)
+                        let compressed = image.flatMap { ImageCompressor.compress($0) }
+                        await MainActor.run {
+                            if let compressed { photoData = compressed }
+                        }
+                    }
+                }
+                .ignoresSafeArea()
+            }
+            .sheet(isPresented: $showPhotoUpgradePrompt) {
+                UpgradePromptSheet(message: "Unlock Stash Pro to add photos to your items and locations.")
+            }
         }
     }
 
@@ -102,17 +126,21 @@ struct AddLocationSheet: View {
                 .listRowInsets(EdgeInsets())
 
             Button {
-                showCamera = true
+                if storeKit.isPro {
+                    showPhotoSourceOptions = true
+                } else {
+                    showPhotoUpgradePrompt = true
+                }
             } label: {
-                Label("Change Photo", systemImage: "camera")
+                Label("Change Photo", systemImage: storeKit.isPro ? "camera" : "lock.fill")
                     .foregroundStyle(.teal)
             }
 
             Button("Remove Photo", role: .destructive) {
                 photoData = nil
             }
-        } else {
-            // Prompt — add photo or skip
+        } else if storeKit.isPro {
+            // Pro: full prompt — add photo or skip
             VStack(alignment: .center, spacing: 14) {
                 Image(systemName: "camera.fill")
                     .font(.title2)
@@ -123,9 +151,37 @@ struct AddLocationSheet: View {
                     .foregroundStyle(Color(.label))
 
                 Button {
-                    showCamera = true
+                    showPhotoSourceOptions = true
                 } label: {
                     Label("Add Photo", systemImage: "photo")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.teal)
+
+                Button("Skip") {
+                    photoSkipped = true
+                }
+                .font(.subheadline)
+                .foregroundStyle(Color(.secondaryLabel))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+        } else {
+            // Free: locked photo prompt
+            VStack(alignment: .center, spacing: 14) {
+                Image(systemName: "lock.fill")
+                    .font(.title2)
+                    .foregroundStyle(Color(.tertiaryLabel))
+
+                Text("Photos require Stash Pro")
+                    .font(.subheadline)
+                    .foregroundStyle(Color(.secondaryLabel))
+
+                Button {
+                    showPhotoUpgradePrompt = true
+                } label: {
+                    Label("Unlock Photos", systemImage: "lock.open.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)

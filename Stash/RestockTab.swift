@@ -95,7 +95,7 @@ struct RestockTab: View {
         var dict: [String: AreaGroup] = [:]
 
         for item in restockItems {
-            let root = rootAncestor(of: item.location)
+            let root = item.location?.rootAncestor
             let key = root?.id.uuidString ?? "unknown"
             if dict[key] == nil {
                 order.append(key)
@@ -121,14 +121,12 @@ struct RestockTab: View {
 // MARK: - AreaGroup
 
 private struct AreaGroup: Identifiable {
-    let id: String = UUID().uuidString
     let area: Location?
     var items: [Item]
 
-    init(area: Location?, items: [Item]) {
-        self.area = area
-        self.items = items
-    }
+    // Stable identity per area so SwiftUI keeps view identity (and
+    // animations) across renders.
+    var id: String { area?.id.uuidString ?? "unknown" }
 }
 
 // MARK: - AreaSectionHeader
@@ -161,7 +159,7 @@ private struct RestockRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
                     .font(.body)
-                Text(locationPath(for: item.location))
+                Text(item.location?.pathString ?? "")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -370,32 +368,4 @@ private struct AdjustMinimumSheet: View {
         minimumEntryText = ""
         minimumFieldFocused = false
     }
-}
-
-// MARK: - Helpers
-
-/// Walks up the parent chain to find the root Area.
-private func rootAncestor(of location: Location?) -> Location? {
-    guard let location else { return nil }
-    var current = location
-    var depth = 0
-    while let parent = current.parent, depth < 50 {
-        current = parent
-        depth += 1
-    }
-    return current
-}
-
-/// Builds the full path string from root to the given location, e.g. "Garage › Top Shelf".
-private func locationPath(for location: Location?) -> String {
-    guard let location else { return "" }
-    var parts: [String] = []
-    var current: Location? = location
-    var depth = 0
-    while let loc = current, depth < 50 {
-        parts.insert(loc.name, at: 0)
-        current = loc.parent
-        depth += 1
-    }
-    return parts.joined(separator: " › ")
 }

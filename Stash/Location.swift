@@ -56,21 +56,27 @@ final class Location {
     /// recomputed from the source data, so it stays correct after any sync event.
     /// (A stored denormalized counter would be unsafe with CloudKit's last-write-wins model.)
     var hasLowStockDescendant: Bool {
+        cachedHasLowStockDescendant(depth: 0)
+    }
+
+    private func cachedHasLowStockDescendant(depth: Int) -> Bool {
+        // Depth guard: a corrupted parent/child cycle must not recurse forever.
+        guard depth < Self.maxAncestorDepth else { return false }
         let now = Date()
         if let entry = Self.lowStockCache[id], entry.expires > now {
             return entry.value
         }
-        let result = computeHasLowStockDescendant()
+        let result = computeHasLowStockDescendant(depth: depth)
         Self.lowStockCache[id] = (value: result, expires: now.addingTimeInterval(5))
         return result
     }
 
-    private func computeHasLowStockDescendant() -> Bool {
+    private func computeHasLowStockDescendant(depth: Int) -> Bool {
         let hasLowItem = itemList.contains { item in
             guard let qty = item.quantity, let min = item.minimumQuantity else { return false }
             return qty < min && item.orderStatusRaw != OrderStatus.onOrder.rawValue
         }
-        return hasLowItem || childList.contains { $0.hasLowStockDescendant }
+        return hasLowItem || childList.contains { $0.cachedHasLowStockDescendant(depth: depth + 1) }
     }
 
     // Static cache — lives on the type, not persisted to SwiftData or CloudKit.

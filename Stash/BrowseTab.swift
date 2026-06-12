@@ -120,13 +120,18 @@ struct BrowseTab: View {
     }
 
     private func cascadeDelete(_ loc: Location) {
-        for child in loc.childList { cascadeDelete(child) }
-        modelContext.delete(loc)
+        modelContext.cascadeDelete(loc)
     }
 
     private func moveContentsToRoot(of loc: Location) {
-        for child in loc.childList { child.parent  = nil }
-        for item  in loc.itemList  { item.location = nil }
+        for child in loc.childList { child.parent = nil }
+        // Items can't live at the top level — a nil location makes them
+        // invisible in the tree. Park them in the "Unsorted" Area instead.
+        let items = loc.itemList
+        if !items.isEmpty {
+            let unsorted = Location.unsortedArea(in: modelContext, excluding: loc.id)
+            for item in items { item.location = unsorted }
+        }
         modelContext.delete(loc)
     }
 }

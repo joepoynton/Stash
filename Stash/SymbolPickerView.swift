@@ -157,13 +157,18 @@ struct SymbolPickerView: View {
     private var emojiEntryField: some View {
         HStack(spacing: 8) {
             TextField("Type or paste an emoji…", text: $emojiText)
+                .keyboardType(.default)
                 .focused($emojiFocused)
                 .onChange(of: emojiText) { _, newValue in
-                    // Accept only the first grapheme cluster
-                    let trimmed = String(newValue.prefix(1))
-                    if emojiText != trimmed { emojiText = trimmed }
-                    selected = trimmed.isEmpty ? nil : trimmed
+                    // Cap raw input at 2 code-units to prevent runaway strings
+                    // without interrupting mid-composition. Trimming to one
+                    // grapheme cluster happens on confirm (onSubmit/onDisappear).
+                    if newValue.count > 2 {
+                        emojiText = String(newValue.prefix(2))
+                    }
                 }
+                .onSubmit { commitEmoji() }
+                .onDisappear { commitEmoji() }
 
             if !emojiText.isEmpty {
                 Text(emojiText)
@@ -181,6 +186,16 @@ struct SymbolPickerView: View {
         .padding(8)
         .background(Color(.systemGray6))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    // MARK: - Emoji commit
+
+    private func commitEmoji() {
+        // String.prefix(1) counts grapheme clusters, so this correctly handles
+        // multi-scalar emoji like 👨‍👩‍👧‍👦 as a single character.
+        let trimmed = String(emojiText.prefix(1))
+        emojiText = trimmed
+        selected = trimmed.isEmpty ? nil : trimmed
     }
 
     // MARK: - Emoji toggle

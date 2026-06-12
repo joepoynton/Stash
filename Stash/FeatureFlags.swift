@@ -3,13 +3,25 @@
 //  Stash
 //
 //  Central feature flag store. All capability checks go here.
-//  StoreKit 2 will flip these in a future release — never scatter checks in views.
+//  Driven by StoreKitManager.isPro — never scatter checks in views directly.
+//  Access via StoreKitManager.featureFlags computed property.
 //
 
 struct FeatureFlags {
-    // Placeholder flags for likely premium features (decide at App Store submission).
-    static let unlimitedItems = true
-    static let iCloudSync = true
-    static let photoSupport = true
-    static let dataExport = true
+    let isPro: Bool
+
+    /// Unlimited items (free tier capped at freeItemLimit).
+    var unlimitedItems: Bool { isPro }
+
+    /// Camera and photo library access on items and locations.
+    var photoSupport: Bool { isPro }
+
+    /// JSON data export.
+    var dataExport: Bool { isPro }
+
+    /// iCloud sync — always enabled.
+    var iCloudSync: Bool { true }
+
+    /// Maximum items allowed on the free tier.
+    static let freeItemLimit = 25
 }

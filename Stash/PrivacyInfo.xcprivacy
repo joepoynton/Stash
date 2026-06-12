@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+	<!-- ============================================================
+	     Tracking
+	     Stash does not use data for tracking and has no advertising
+	     or analytics frameworks.
+	     ============================================================ -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<!-- ============================================================
+	     Collected data types
+	     All data is stored on-device and synced exclusively to the
+	     user's own CloudKit container (iCloud.Poynt.Stash).
+	     The developer has no access to this data.
+	     ============================================================ -->
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array>
+
+		<!-- Photos captured via AVFoundation / chosen via PHPickerViewController
+		     and stored as item or location photos. -->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypePhotosorVideos</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+
+		<!-- User-generated text: item names, notes, location names.
+		     Synced to the user's own iCloud via SwiftData + CloudKit. -->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeOtherUserContent</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+
+	</array>
+
+	<!-- ============================================================
+	     Required-reason APIs accessed by the app's own code
+	     ============================================================ -->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+
+		<!-- UserDefaults — used by @AppStorage (staleThresholdDays) and
+		     directly in StoreKitManager (stashProPurchased key).
+		     Reason CA92.1: read/write data within the same app. -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+
+	</array>
+
+</dict>
+</plist>

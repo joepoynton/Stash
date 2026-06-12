@@ -44,15 +44,6 @@ struct SearchResultRow: View {
     }
 
     private var locationPath: String {
-        guard let location = item.location else { return "" }
-        var parts: [String] = []
-        var current: Location? = location
-        var depth = 0
-        while let loc = current, depth < 50 {
-            parts.insert(loc.name, at: 0)
-            current = loc.parent
-            depth += 1
-        }
-        return parts.joined(separator: " › ")
+        item.location?.pathString ?? ""
     }
 }

@@ -73,11 +73,13 @@ final class Item {
 
     func updateQuantity(to newQuantity: Int) {
         quantity = max(0, newQuantity)
+        clearOrderStatusIfRestocked()
         lastVerified = Date()
     }
 
     func incrementQuantity() {
         quantity = (quantity ?? 0) + 1
+        clearOrderStatusIfRestocked()
         lastVerified = Date()
     }
 
@@ -95,15 +97,27 @@ final class Item {
         orderStatusRaw = OrderStatus.onOrder.rawValue
     }
 
-    /// Records arrival of `count` units. Resets order status. Updates lastVerified.
+    /// If the user restocks via +/quantity edits instead of "Mark as Arrived",
+    /// the onOrder flag would otherwise stick forever with no way to clear it.
+    private func clearOrderStatusIfRestocked() {
+        guard orderStatusRaw == OrderStatus.onOrder.rawValue,
+              let qty = quantity, let min = minimumQuantity, qty >= min else { return }
+        orderStatusRaw = OrderStatus.normal.rawValue
+    }
+
     func returnToPlace() {
         isOutOfPlace = false
         outOfPlaceNote = nil
         lastVerified = Date()
     }
 
+    /// Records arrival of `count` units. Resets order status. Updates lastVerified.
+    /// Quantity is only adjusted when tracking is already on — arrival must
+    /// never silently switch quantity tracking on for an untracked item.
     func markAsArrived(count: Int) {
-        quantity = (quantity ?? 0) + count
+        if quantity != nil {
+            quantity = (quantity ?? 0) + count
+        }
         orderStatusRaw = OrderStatus.normal.rawValue
         manuallyRestocking = false
         lastVerified = Date()

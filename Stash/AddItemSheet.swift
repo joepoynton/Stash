@@ -11,7 +11,10 @@ struct AddItemSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(StoreKitManager.self) private var storeKit
+    @Query private var allItems: [Item]
 
+    @State private var showUpgradePrompt = false
     @State private var name = ""
     @State private var notes = ""
     @State private var trackQuantity = false
@@ -151,6 +154,11 @@ struct AddItemSheet: View {
                 if !isFocused && editingMinimum { commitMinimumEntry() }
             }
             .onAppear { nameFocused = true }
+            .sheet(isPresented: $showUpgradePrompt) {
+                UpgradePromptSheet(
+                    message: "You've used \(allItems.count) of \(FeatureFlags.freeItemLimit) free items. Unlock Stash Pro for unlimited items, photos, and data export."
+                )
+            }
         }
     }
 
@@ -236,6 +244,10 @@ struct AddItemSheet: View {
     private func save() {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
+        guard storeKit.isPro || allItems.count < FeatureFlags.freeItemLimit else {
+            showUpgradePrompt = true
+            return
+        }
 
         let item = Item(name: trimmed, location: location)
         item.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil

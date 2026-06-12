@@ -12,18 +12,22 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(StoreKitManager.self) private var storeKit
     @Query(sort: \Location.dateCreated) private var allLocations: [Location]
+    @Query private var allItems: [Item]
 
     @AppStorage("staleThresholdDays") private var staleThresholdDays = 90
 
     @State private var showExportConfirm = false
     @State private var exportURL: URL? = nil
     @State private var showShareSheet = false
-    @State private var showDeleteAllConfirm = false
     @State private var showImportPicker = false
     @State private var showImportResult = false
     @State private var importResultMessage = ""
     @State private var importResultTitle = "Import Complete"
+    @State private var showUpgradePrompt = false
+    @State private var upgradeMessage = ""
+    @State private var isRestoring = false
 
     var body: some View {
         NavigationStack {
@@ -47,12 +51,57 @@ struct SettingsView: View {
                 // MARK: Data
 
                 Section("Data") {
-                    Button("Export Data") {
-                        showExportConfirm = true
+                    // Export — Pro only
+                    if storeKit.isPro {
+                        Button("Export Data") {
+                            showExportConfirm = true
+                        }
+                    } else {
+                        Button {
+                            upgradeMessage = "Unlock Stash Pro to export your inventory as JSON."
+                            showUpgradePrompt = true
+                        } label: {
+                            HStack {
+                                Text("Export Data")
+                                    .foregroundStyle(Color(.tertiaryLabel))
+                                Spacer()
+                                Text("Pro")
+                                    .font(.caption2)
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 3)
+                                    .background(.teal)
+                                    .clipShape(Capsule())
+                            }
+                        }
                     }
+                    // Import
                     Button("Import Data") {
-                        showImportPicker = true
+                        if !storeKit.isPro && allItems.count >= FeatureFlags.freeItemLimit {
+                            upgradeMessage = "You've used \(allItems.count) of \(FeatureFlags.freeItemLimit) free items. Unlock Stash Pro for unlimited items, photos, and data export."
+                            showUpgradePrompt = true
+                        } else {
+                            showImportPicker = true
+                        }
                     }
+                    // Restore Purchases
+                    Button {
+                        Task {
+                            isRestoring = true
+                            await storeKit.restorePurchases()
+                            isRestoring = false
+                        }
+                    } label: {
+                        HStack {
+                            Text("Restore Purchases")
+                            if isRestoring {
+                                Spacer()
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(isRestoring)
                 }
 
                 // MARK: Notifications
@@ -75,12 +124,6 @@ struct SettingsView: View {
                     LabeledContent("Build", value: buildNumber)
                 }
 
-                // DEVELOPER TOOL — Remove before App Store submission
-                Section("Developer Tools") {
-                    Button("Delete All Data", role: .destructive) {
-                        showDeleteAllConfirm = true
-                    }
-                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -99,13 +142,6 @@ struct SettingsView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Photos are not included in this export.")
-            }
-            // DEVELOPER TOOL — Remove before App Store submission
-            .alert("Delete All Data?", isPresented: $showDeleteAllConfirm) {
-                Button("Delete Everything", role: .destructive) { deleteAllData() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will permanently delete all locations and items from this device and iCloud. This cannot be undone.")
             }
             // Share sheet
             .sheet(isPresented: $showShareSheet, onDismiss: cleanupExportFile) {
@@ -133,6 +169,10 @@ struct SettingsView: View {
             } message: {
                 Text(importResultMessage)
             }
+            // Upgrade prompt
+            .sheet(isPresented: $showUpgradePrompt) {
+                UpgradePromptSheet(message: upgradeMessage)
+            }
         }
     }
 
@@ -144,14 +184,6 @@ struct SettingsView: View {
 
     private var buildNumber: String {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
-    }
-
-    // MARK: - Developer Tools
-    // DEVELOPER TOOL — Remove before App Store submission
-
-    private func deleteAllData() {
-        try? modelContext.delete(model: Item.self)
-        try? modelContext.delete(model: Location.self)
     }
 
     // MARK: - Export

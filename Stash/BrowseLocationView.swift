@@ -14,9 +14,11 @@ struct BrowseLocationView: View {
     @Binding var navigationPath: [Location]
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(StoreKitManager.self) private var storeKit
 
     // Sheet / dialog state
     @State private var activeSheet: BrowseSheet? = nil
+    @State private var showPhotoUpgradePrompt = false
 
     // Location delete state
     @State private var locationToDelete: Location? = nil
@@ -30,6 +32,7 @@ struct BrowseLocationView: View {
 
     // Location photo state
     @State private var showCamera = false
+    @State private var showLibraryPicker = false
     @State private var showLocationPhotoActions = false
 
     // Reorder mode
@@ -39,14 +42,7 @@ struct BrowseLocationView: View {
 
     /// Walks up to the root ancestor and returns its colour, falling back to teal.
     private var areaTint: Color {
-        var current: Location? = location
-        while let parent = current?.parent {
-            current = parent
-        }
-        guard let hex = current?.color, let color = Color(hex: hex) else {
-            return .teal
-        }
-        return color
+        rootAreaColor(for: location) ?? .teal
     }
 
     // MARK: - Derived data
@@ -71,13 +67,7 @@ struct BrowseLocationView: View {
     }
 
     private var ancestorChain: [Location] {
-        var chain: [Location] = []
-        var current: Location? = location
-        while let loc = current {
-            chain.insert(loc, at: 0)
-            current = loc.parent
-        }
-        return chain
+        location.ancestorChain
     }
 
     // MARK: - Body
@@ -109,13 +99,16 @@ struct BrowseLocationView: View {
                                 Label("Add Item", systemImage: "plus.square")
                             }
                             Button {
-                                if location.photo != nil {
+                                if storeKit.isPro {
                                     showLocationPhotoActions = true
                                 } else {
-                                    showCamera = true
+                                    showPhotoUpgradePrompt = true
                                 }
                             } label: {
-                                Label("Add Photo", systemImage: "camera")
+                                Label(
+                                    location.photo != nil ? "Replace Photo" : "Add Photo",
+                                    systemImage: storeKit.isPro ? "camera" : "lock.fill"
+                                )
                             }
                             if !location.childList.isEmpty {
                                 Button {
@@ -134,6 +127,7 @@ struct BrowseLocationView: View {
                 location: location,
                 activeSheet: $activeSheet,
                 showCamera: $showCamera,
+                showLibraryPicker: $showLibraryPicker,
                 showLocationPhotoActions: $showLocationPhotoActions,
                 locationToDelete: $locationToDelete,
                 showLocationDeleteActionSheet: $showLocationDeleteActionSheet,
@@ -145,6 +139,9 @@ struct BrowseLocationView: View {
                 cascadeDelete: cascadeDelete,
                 modelContext: modelContext
             ))
+            .sheet(isPresented: $showPhotoUpgradePrompt) {
+                UpgradePromptSheet(message: "Unlock Stash Pro to add photos to your items and locations.")
+            }
     }
 
     @ViewBuilder
@@ -269,8 +266,7 @@ struct BrowseLocationView: View {
     }
 
     private func cascadeDelete(_ loc: Location) {
-        for child in loc.childList { cascadeDelete(child) }
-        modelContext.delete(loc)
+        modelContext.cascadeDelete(loc)
     }
 
     private func moveContentsToParent(of loc: Location) {
@@ -288,10 +284,13 @@ private struct QuickAddSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(StoreKitManager.self) private var storeKit
+    @Query private var allItems: [Item]
 
     @State private var name = ""
     @State private var addedItems: [Item] = []
     @State private var itemToDetail: Item? = nil
+    @State private var showUpgradePrompt = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -339,12 +338,22 @@ private struct QuickAddSheet: View {
             .sheet(item: $itemToDetail, onDismiss: { focused = true }) {
                 ItemDetailSheet(item: $0)
             }
+            .sheet(isPresented: $showUpgradePrompt, onDismiss: { focused = true }) {
+                UpgradePromptSheet(
+                    message: "You've used \(allItems.count) of \(FeatureFlags.freeItemLimit) free items. Unlock Stash Pro for unlimited items, photos, and data export."
+                )
+            }
         }
     }
 
     private func saveAndClear() {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
+        guard storeKit.isPro || allItems.count < FeatureFlags.freeItemLimit else {
+            focused = false
+            showUpgradePrompt = true
+            return
+        }
         let item = Item(name: trimmed, location: location)
         modelContext.insert(item)
         addedItems.insert(item, at: 0)   // newest at top
@@ -384,6 +393,7 @@ private struct BrowseLocationSheets: ViewModifier {
     let location: Location
     @Binding var activeSheet: BrowseSheet?
     @Binding var showCamera: Bool
+    @Binding var showLibraryPicker: Bool
     @Binding var showLocationPhotoActions: Bool
     @Binding var locationToDelete: Location?
     @Binding var showLocationDeleteActionSheet: Bool
@@ -421,12 +431,27 @@ private struct BrowseLocationSheets: ViewModifier {
                 }
             }
             .confirmationDialog("Photo", isPresented: $showLocationPhotoActions, titleVisibility: .hidden) {
-                Button("Replace Photo") { showCamera = true }
-                Button("Remove Photo", role: .destructive) { location.photo = nil }
+                Button("Take Photo") { showCamera = true }
+                Button("Choose from Library") { showLibraryPicker = true }
+                if location.photo != nil {
+                    Button("Remove Photo", role: .destructive) { location.photo = nil }
+                }
                 Button("Cancel", role: .cancel) {}
             }
             .fullScreenCover(isPresented: $showCamera) {
                 CameraView { data in
+                    Task {
+                        let image = UIImage(data: data)
+                        let compressed = image.flatMap { ImageCompressor.compress($0) }
+                        await MainActor.run {
+                            if let compressed { location.photo = compressed }
+                        }
+                    }
+                }
+                .ignoresSafeArea()
+            }
+            .sheet(isPresented: $showLibraryPicker) {
+                LibraryPickerView { data in
                     Task {
                         let image = UIImage(data: data)
                         let compressed = image.flatMap { ImageCompressor.compress($0) }

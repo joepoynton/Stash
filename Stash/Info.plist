@@ -12,5 +12,7 @@
         </array>
         <key>NSCameraUsageDescription</key>
         <string>Stash uses the camera to photograph your spaces and items.</string>
+        <key>NSPhotoLibraryUsageDescription</key>
+        <string>Stash uses your photo library to add images to your spaces and items.</string>
     </dict>
 </plist>

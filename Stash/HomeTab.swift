@@ -45,6 +45,7 @@ struct HomeTab: View {
     @Environment(NavigationState.self) private var navState
     @Environment(RecentlyAccessedStore.self) private var recentStore
     @Environment(\.modelContext) private var modelContext
+    @Environment(StoreKitManager.self) private var storeKit
 
     @AppStorage("staleThresholdDays") private var staleThresholdDays = 90
 
@@ -52,6 +53,7 @@ struct HomeTab: View {
     @State private var showAddArea = false
     @State private var selectedItem: Item? = nil
     @State private var searchText = ""
+    @State private var showUpgradePrompt = false
 
     // MARK: Derived data
 
@@ -82,7 +84,9 @@ struct HomeTab: View {
     }
 
     private var recentItems: [Item] {
-        let byID = Dictionary(uniqueKeysWithValues: allItems.map { ($0.id.uuidString, $0) })
+        // uniquingKeysWith: duplicate UUIDs (possible after a CloudKit merge)
+        // must not trap the whole tab.
+        let byID = Dictionary(allItems.map { ($0.id.uuidString, $0) }, uniquingKeysWith: { a, _ in a })
         return recentStore.orderedIDs.compactMap { byID[$0] }
     }
 
@@ -126,6 +130,11 @@ struct HomeTab: View {
         }
         .sheet(item: $selectedItem) {
             ItemDetailSheet(item: $0)
+        }
+        .sheet(isPresented: $showUpgradePrompt) {
+            UpgradePromptSheet(
+                message: "You have \(allItems.count) items. Unlock Stash Pro for unlimited items, photos, and data export."
+            )
         }
     }
 
@@ -223,13 +232,7 @@ struct HomeTab: View {
 
     /// Deep-links into the Browse tab at the given location, building the full ancestor chain.
     private func navigateToLocation(_ location: Location) {
-        var chain: [Location] = []
-        var current: Location? = location
-        while let loc = current {
-            chain.insert(loc, at: 0)
-            current = loc.parent
-        }
-        navState.browseNavigationPath = chain
+        navState.browseNavigationPath = location.ancestorChain
         navState.selectedTab = 1
     }
 
@@ -237,11 +240,91 @@ struct HomeTab: View {
 
     private var mainContent: some View {
         List {
+            overLimitBanner
+            unplacedItemsSection
             needsAttentionSection
             yourSpacesSection
             recentlyAccessedSection
         }
         .listStyle(.insetGrouped)
+    }
+
+    // MARK: Items without a place (recovery)
+
+    /// Items whose location was lost (location == nil). These are invisible
+    /// in the Browse tree, so surface them here for the user to re-home.
+    private var unplacedItems: [Item] {
+        allItems.filter { $0.location == nil }.sorted { $0.name < $1.name }
+    }
+
+    @ViewBuilder
+    private var unplacedItemsSection: some View {
+        let items = unplacedItems
+        if !items.isEmpty {
+            Section {
+                ForEach(items) { item in
+                    Button { selectedItem = item } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "questionmark.folder")
+                                .foregroundStyle(.orange)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.name)
+                                    .foregroundStyle(Color(.label))
+                                Text("Tap to give it a home")
+                                    .font(.caption)
+                                    .foregroundStyle(Color(.secondaryLabel))
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Color(.tertiaryLabel))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            } header: {
+                Text("Items without a place")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color(.secondaryLabel))
+                    .textCase(nil)
+            }
+        }
+    }
+
+    // MARK: Over-limit banner (free users who have exceeded 25 items)
+
+    @ViewBuilder
+    private var overLimitBanner: some View {
+        if !storeKit.isPro && allItems.count > FeatureFlags.freeItemLimit {
+            Section {
+                Button {
+                    showUpgradePrompt = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "lock.fill")
+                            .foregroundStyle(.teal)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("You have \(allItems.count) items")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundStyle(Color(.label))
+                            Text("Upgrade to Stash Pro to add more")
+                                .font(.caption)
+                                .foregroundStyle(Color(.secondaryLabel))
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(Color(.tertiaryLabel))
+                    }
+                    .padding(.vertical, 2)
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     // MARK: Needs Attention
@@ -486,16 +569,7 @@ private struct NeedsAttentionRow: View {
     }
 
     private var locationPath: String {
-        guard let location = item.location else { return "" }
-        var parts: [String] = []
-        var current: Location? = location
-        var depth = 0
-        while let loc = current, depth < 50 {
-            parts.insert(loc.name, at: 0)
-            current = loc.parent
-            depth += 1
-        }
-        return parts.joined(separator: " › ")
+        item.location?.pathString ?? ""
     }
 }
 
@@ -547,13 +621,7 @@ private struct SearchLocationRow: View {
     /// Full path of ancestors above this location, e.g. "Kitchen › Cupboards".
     /// Empty if this is a root area.
     private var ancestorPath: String {
-        var parts: [String] = []
-        var current: Location? = location.parent
-        while let loc = current {
-            parts.insert(loc.name, at: 0)
-            current = loc.parent
-        }
-        return parts.joined(separator: " › ")
+        location.ancestorChain.dropLast().map(\.name).joined(separator: " › ")
     }
 }
 
@@ -589,15 +657,6 @@ private struct RecentlyAccessedRow: View {
     }
 
     private var locationPath: String {
-        guard let location = item.location else { return "" }
-        var parts: [String] = []
-        var current: Location? = location
-        var depth = 0
-        while let loc = current, depth < 50 {
-            parts.insert(loc.name, at: 0)
-            current = loc.parent
-            depth += 1
-        }
-        return parts.joined(separator: " › ")
+        item.location?.pathString ?? ""
     }
 }

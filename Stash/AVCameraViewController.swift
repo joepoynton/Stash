@@ -15,6 +15,7 @@ class AVCameraViewController: UIViewController {
     private var previewLayer: AVCaptureVideoPreviewLayer!
     private let photoOutput = AVCapturePhotoOutput()
     private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
+    private var rotationObservation: NSKeyValueObservation?
     private var captureDevice: AVCaptureDevice?
 
     // MARK: - Lifecycle
@@ -25,6 +26,14 @@ class AVCameraViewController: UIViewController {
         setupPreviewLayer()
         setupControlButtons()
         checkPermissionsAndSetupSession()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard session.isRunning, let rc = rotationCoordinator else { return }
+        let angle = rc.videoRotationAngleForHorizonLevelPreview
+        previewLayer.connection?.videoRotationAngle = angle
+        photoOutput.connection(with: .video)?.videoRotationAngle = angle
     }
 
     override func viewDidLayoutSubviews() {
@@ -116,13 +125,32 @@ class AVCameraViewController: UIViewController {
         session.commitConfiguration()
 
         // RotationCoordinator needs both the device and the already-configured preview layer.
-        rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: previewLayer)
-        if let rc = rotationCoordinator {
-            previewLayer.connection?.videoRotationAngle = rc.videoRotationAngleForHorizonLevelPreview
+        let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: previewLayer)
+        rotationCoordinator = coordinator
+
+        // Store the token as an instance property so it is never deallocated.
+        rotationObservation = coordinator.observe(
+            \.videoRotationAngleForHorizonLevelPreview,
+            options: [.new]
+        ) { [weak self] coordinator, _ in
+            let angle = coordinator.videoRotationAngleForHorizonLevelPreview
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.previewLayer.connection?.videoRotationAngle = angle
+                self.photoOutput.connection(with: .video)?.videoRotationAngle = angle
+            }
         }
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.session.startRunning()
+            // Apply initial rotation after the session is running so the preview
+            // layer connection is active and the angle sticks on first appearance.
+            DispatchQueue.main.async {
+                guard let self, let rc = self.rotationCoordinator else { return }
+                let angle = rc.videoRotationAngleForHorizonLevelPreview
+                self.previewLayer.connection?.videoRotationAngle = angle
+                self.photoOutput.connection(with: .video)?.videoRotationAngle = angle
+            }
         }
     }
 

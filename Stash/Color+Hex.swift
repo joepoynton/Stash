@@ -31,12 +31,7 @@ extension Color {
 /// that Area's assigned colour. Returns nil when no colour is set, letting
 /// call sites decide the fallback (usually `.teal`).
 func rootAreaColor(for location: Location?) -> Color? {
-    guard let location else { return nil }
-    var current: Location? = location
-    while let parent = current?.parent {
-        current = parent
-    }
-    guard let hex = current?.color else { return nil }
+    guard let hex = location?.rootAncestor.color else { return nil }
     return Color(hex: hex)
 }
 

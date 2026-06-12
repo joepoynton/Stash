@@ -10,14 +10,18 @@ struct LocationDetailSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(StoreKitManager.self) private var storeKit
 
     @State private var showMoveSheet = false
+    @State private var showPhotoUpgradePrompt = false
     @State private var pickerExpandedIDs: Set<UUID> = []
     @State private var showDeleteActionSheet = false
     @State private var showCascadeConfirm = false
     @State private var showEmptyDeleteConfirm = false
     @State private var showCycleAlert = false
     @State private var showCamera = false
+    @State private var showLibraryPicker = false
+    @State private var showPhotoSourceOptions = false
 
     static let areaColors: [(name: String, hex: String)] = [
         ("Teal",   "#2A9D8F"), ("Blue",   "#3A86FF"), ("Purple", "#8338EC"),
@@ -69,6 +73,23 @@ struct LocationDetailSheet: View {
                 }
                 .ignoresSafeArea()
             }
+            .confirmationDialog("Photo", isPresented: $showPhotoSourceOptions, titleVisibility: .hidden) {
+                Button("Take Photo") { showCamera = true }
+                Button("Choose from Library") { showLibraryPicker = true }
+                Button("Cancel", role: .cancel) {}
+            }
+            .sheet(isPresented: $showLibraryPicker) {
+                LibraryPickerView { data in
+                    Task {
+                        let image = UIImage(data: data)
+                        let compressed = image.flatMap { ImageCompressor.compress($0) }
+                        await MainActor.run {
+                            if let compressed { location.photo = compressed }
+                        }
+                    }
+                }
+                .ignoresSafeArea()
+            }
             .confirmationDialog(
                 "Delete \"\(location.name)\"?",
                 isPresented: $showDeleteActionSheet,
@@ -100,6 +121,9 @@ struct LocationDetailSheet: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("This cannot be undone.")
+            }
+            .sheet(isPresented: $showPhotoUpgradePrompt) {
+                UpgradePromptSheet(message: "Unlock Stash Pro to add photos to your items and locations.")
             }
         }
     }
@@ -138,9 +162,13 @@ struct LocationDetailSheet: View {
                         .listRowInsets(EdgeInsets())
 
                     Button {
-                        showCamera = true
+                        if storeKit.isPro {
+                            showPhotoSourceOptions = true
+                        } else {
+                            showPhotoUpgradePrompt = true
+                        }
                     } label: {
-                        Label("Replace Photo", systemImage: "camera")
+                        Label("Replace Photo", systemImage: storeKit.isPro ? "camera" : "lock.fill")
                             .foregroundStyle(.teal)
                     }
                     Button("Remove Photo", role: .destructive) {
@@ -148,10 +176,14 @@ struct LocationDetailSheet: View {
                     }
                 } else {
                     Button {
-                        showCamera = true
+                        if storeKit.isPro {
+                            showPhotoSourceOptions = true
+                        } else {
+                            showPhotoUpgradePrompt = true
+                        }
                     } label: {
-                        Label("Add Photo", systemImage: "camera")
-                            .foregroundStyle(.teal)
+                        Label("Add Photo", systemImage: storeKit.isPro ? "camera" : "lock.fill")
+                            .foregroundStyle(storeKit.isPro ? .teal : Color(.secondaryLabel))
                     }
                 }
             }
@@ -240,19 +272,25 @@ struct LocationDetailSheet: View {
     }
 
     private func collectIDs(of loc: Location, into ids: inout Set<UUID>) {
-        ids.insert(loc.id)
+        // insert(_:).inserted doubles as a cycle guard for corrupted trees.
+        guard ids.insert(loc.id).inserted else { return }
         for child in loc.childList { collectIDs(of: child, into: &ids) }
     }
 
     private func cascadeDelete(_ loc: Location) {
-        for child in loc.childList { cascadeDelete(child) }
-        modelContext.delete(loc)
+        modelContext.cascadeDelete(loc)
     }
 
     private func moveContentsToParent() {
         let dest = location.parent
         for child in location.childList { child.parent = dest }
-        for item  in location.itemList  { item.location = dest }
+        // When deleting a root Area, dest is nil — items can't live at the
+        // top level, so park them in the "Unsorted" Area instead.
+        let items = location.itemList
+        if !items.isEmpty {
+            let itemDest = dest ?? Location.unsortedArea(in: modelContext, excluding: location.id)
+            for item in items { item.location = itemDest }
+        }
         modelContext.delete(location)
     }
 }

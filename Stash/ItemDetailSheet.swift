@@ -11,11 +11,16 @@ struct ItemDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(RecentlyAccessedStore.self) private var recentStore
+    @Environment(StoreKitManager.self) private var storeKit
 
     @State private var showMoveSheet = false
+    @State private var showPhotoUpgradePrompt = false
     @State private var pickerExpandedIDs: Set<UUID> = []
     @State private var showDeleteConfirm = false
+    @State private var showMarkArrivedConfirm = false
     @State private var showCamera = false
+    @State private var showLibraryPicker = false
+    @State private var showPhotoSourceOptions = false
     @State private var showPhotoActions = false
     @State private var showFullscreenPhoto = false
 
@@ -40,13 +45,9 @@ struct ItemDetailSheet: View {
                 .listRowInsets(EdgeInsets())
                 .listRowSeparator(.hidden)
 
-                // On-order banner
+                // On-order banner — tappable so the order can be cleared from here
                 if item.orderStatus == .onOrder {
-                    Section {
-                        Label("On its way", systemImage: "shippingbox.fill")
-                            .foregroundStyle(.orange)
-                            .fontWeight(.medium)
-                    }
+                    onOrderBanner
                 }
 
                 // Name
@@ -226,9 +227,27 @@ struct ItemDetailSheet: View {
                 .ignoresSafeArea()
             }
             .confirmationDialog("Photo", isPresented: $showPhotoActions, titleVisibility: .hidden) {
-                Button("Replace Photo") { showCamera = true }
+                Button("Take Photo") { showCamera = true }
+                Button("Choose from Library") { showLibraryPicker = true }
                 Button("Remove Photo", role: .destructive) { item.photo = nil }
                 Button("Cancel", role: .cancel) {}
+            }
+            .confirmationDialog("Add Photo", isPresented: $showPhotoSourceOptions, titleVisibility: .hidden) {
+                Button("Take Photo") { showCamera = true }
+                Button("Choose from Library") { showLibraryPicker = true }
+                Button("Cancel", role: .cancel) {}
+            }
+            .sheet(isPresented: $showLibraryPicker) {
+                LibraryPickerView { data in
+                    Task {
+                        let image = UIImage(data: data)
+                        let compressed = image.flatMap { ImageCompressor.compress($0) }
+                        await MainActor.run {
+                            if let compressed { item.photo = compressed }
+                        }
+                    }
+                }
+                .ignoresSafeArea()
             }
             .fullScreenCover(isPresented: $showFullscreenPhoto) {
                 FullscreenPhotoView(imageData: item.photo)
@@ -255,6 +274,37 @@ struct ItemDetailSheet: View {
         }
     }
 
+    // MARK: - On-order banner
+
+    private var onOrderBanner: some View {
+        Section {
+            Button {
+                showMarkArrivedConfirm = true
+            } label: {
+                HStack {
+                    Label("On its way", systemImage: "shippingbox.fill")
+                        .foregroundStyle(.orange)
+                        .fontWeight(.medium)
+                    Spacer()
+                    Text("Arrived?")
+                        .font(.subheadline)
+                        .foregroundStyle(.teal)
+                }
+            }
+            .buttonStyle(.plain)
+            .alert("Mark as arrived?", isPresented: $showMarkArrivedConfirm) {
+                Button("Mark as Arrived") {
+                    // Count 0: the order status clears; the quantity controls
+                    // below are the place to record how many actually arrived.
+                    item.markAsArrived(count: 0)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This clears the on-order status. Update the quantity below once you've put the items away.")
+            }
+        }
+    }
+
     // MARK: - Photo section
 
     @ViewBuilder
@@ -270,11 +320,15 @@ struct ItemDetailSheet: View {
                     .contentShape(Rectangle())
                     .onTapGesture { showFullscreenPhoto = true }
 
-                // Camera icon to replace/remove photo
+                // Camera/lock icon to replace/remove photo
                 Button {
-                    showPhotoActions = true
+                    if storeKit.isPro {
+                        showPhotoActions = true
+                    } else {
+                        showPhotoUpgradePrompt = true
+                    }
                 } label: {
-                    Image(systemName: "camera.fill")
+                    Image(systemName: storeKit.isPro ? "camera.fill" : "lock.fill")
                         .font(.caption)
                         .padding(8)
                         .background(.thinMaterial)
@@ -284,20 +338,27 @@ struct ItemDetailSheet: View {
                 .buttonStyle(.plain)
                 .padding(8)
             } else {
-                // Placeholder — discoverable camera icon, tap to add
+                // Placeholder — camera or lock icon depending on tier
                 Button {
-                    showCamera = true
+                    if storeKit.isPro {
+                        showPhotoSourceOptions = true
+                    } else {
+                        showPhotoUpgradePrompt = true
+                    }
                 } label: {
                     Color(.systemGray6)
                         .aspectRatio(3/2, contentMode: .fit)
                         .overlay {
-                            Image(systemName: "camera")
+                            Image(systemName: storeKit.isPro ? "camera" : "lock.fill")
                                 .font(.title2)
                                 .foregroundStyle(Color(.tertiaryLabel))
                         }
                 }
                 .buttonStyle(.plain)
             }
+        }
+        .sheet(isPresented: $showPhotoUpgradePrompt) {
+            UpgradePromptSheet(message: "Unlock Stash Pro to add photos to your items and locations.")
         }
     }
 
@@ -494,16 +555,7 @@ struct ItemDetailSheet: View {
     }
 
     private var locationPath: String {
-        guard let location = item.location else { return "No location" }
-        var parts: [String] = []
-        var current: Location? = location
-        var depth = 0
-        while let loc = current, depth < 50 {
-            parts.insert(loc.name, at: 0)
-            current = loc.parent
-            depth += 1
-        }
-        return parts.joined(separator: " › ")
+        item.location?.pathString ?? "No location"
     }
 
     private var notesBinding: Binding<String> {
