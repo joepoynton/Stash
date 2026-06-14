@@ -5,7 +5,6 @@
 
 import SwiftUI
 import SwiftData
-import os
 
 @main
 struct StashApp: App {
@@ -18,27 +17,13 @@ struct StashApp: App {
     private let sharedModelContainer: ModelContainer
 
     init() {
-        let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Poynt.Stash", category: "Startup")
-        let schema = Schema([Location.self, Item.self])
-        // CloudKit sync via .automatic (uses iCloud.Poynt.Stash container).
-        // Requires iCloud + CloudKit capabilities in Xcode and the container
-        // provisioned in the Apple Developer portal.
-        let cloudConfig = ModelConfiguration(schema: schema, cloudKitDatabase: .automatic)
-        do {
-            sharedModelContainer = try ModelContainer(for: schema, configurations: [cloudConfig])
-            cloudSyncUnavailable = false
-        } catch {
-            // A CloudKit container failure must not crash-loop the app — the
-            // user's data is still on disk. Retry without sync.
-            logger.error("CloudKit ModelContainer failed (\(error, privacy: .public)). Retrying local-only.")
-            let localConfig = ModelConfiguration(schema: schema, cloudKitDatabase: .none)
-            do {
-                sharedModelContainer = try ModelContainer(for: schema, configurations: [localConfig])
-                cloudSyncUnavailable = true
-            } catch {
-                fatalError("Could not create ModelContainer even without CloudKit: \(error)")
-            }
-        }
+        // Single process-wide container (see StashModelContainer). The App
+        // Intents / Spotlight layer reads and writes the same store, and may
+        // create it first if the system launches the app into the background to
+        // answer a Siri or Spotlight request. CloudKit config and the
+        // local-only fallback live there, unchanged.
+        sharedModelContainer = StashModelContainer.shared
+        cloudSyncUnavailable = StashModelContainer.cloudSyncUnavailable
 
         // Launch-time safety pass: sever any parent cycles (possible via
         // CloudKit merges) before any view walks the tree.
@@ -49,6 +34,9 @@ struct StashApp: App {
         WindowGroup {
             ContentView(showSyncUnavailableBanner: cloudSyncUnavailable)
                 .environment(storeKit)
+                // Build the Spotlight index on launch and keep it in sync with
+                // the store thereafter (added / renamed / moved / deleted items).
+                .task { SpotlightIndexer.start() }
         }
         .modelContainer(sharedModelContainer)
     }

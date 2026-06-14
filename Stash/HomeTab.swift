@@ -3,7 +3,8 @@
 //  Stash
 //
 //  Dashboard tab. Shows Needs Attention, Recently Accessed, and the Area card grid.
-//  Search bar (Phase 4): live search across item names, location names, and notes.
+//  Search lives in SearchResultsView (shared with Browse): live search across
+//  item names, location names, and notes.
 //
 
 import SwiftUI
@@ -12,26 +13,36 @@ import SwiftData
 // MARK: - Attention reason
 
 private enum AttentionReason {
+    case outOfPlace
     case lowStock
+    case expired
     case expiringSoon
     case notVerified
-    case outOfPlace
 
-    var label: String {
+    /// Maps to the shared StatusColor so colour + label have one source of
+    /// truth across every screen (C1).
+    private var statusColor: StatusColor {
         switch self {
-        case .lowStock:     "Low stock"
-        case .expiringSoon: "Expires soon"
-        case .notVerified:  "Not verified"
-        case .outOfPlace:   "Out of place"
+        case .outOfPlace:   .outOfPlace
+        case .lowStock:     .lowStock
+        case .expired:      .expired
+        case .expiringSoon: .expiringSoon
+        case .notVerified:  .notVerified
         }
     }
 
-    var color: Color {
+    var label: String { statusColor.label }
+
+    var color: Color { statusColor.color }
+
+    /// Severity order for the Needs Attention list. Lower sorts first.
+    var rank: Int {
         switch self {
-        case .lowStock:     .teal
-        case .expiringSoon: .orange
-        case .notVerified:  Color(.secondaryLabel)
-        case .outOfPlace:   Color(.systemIndigo)
+        case .outOfPlace:   0
+        case .lowStock:     1
+        case .expired:      2
+        case .expiringSoon: 3
+        case .notVerified:  4
         }
     }
 }
@@ -54,6 +65,13 @@ struct HomeTab: View {
     @State private var selectedItem: Item? = nil
     @State private var searchText = ""
     @State private var showUpgradePrompt = false
+    @State private var showAllAttention = false
+    @State private var showQuickAdd = false
+    @State private var quickAddArea: Location? = nil
+    @State private var areaToEdit: Location? = nil
+
+    /// Needs Attention shows at most this many rows until "Show all" is tapped.
+    private static let attentionCap = 5
 
     // MARK: Derived data
 
@@ -66,20 +84,29 @@ struct HomeTab: View {
         let expiryThreshold = now.addingTimeInterval(30 * 86400)
         let staleThreshold  = now.addingTimeInterval(-Double(staleThresholdDays) * 86400)
 
-        return allItems.compactMap { item in
+        return allItems.compactMap { item -> (item: Item, reason: AttentionReason)? in
             if item.isOutOfPlace {
                 return (item, .outOfPlace)
             }
             if item.orderStatus == .low {
                 return (item, .lowStock)
             }
-            if let expiry = item.expiryDate, expiry <= expiryThreshold {
-                return (item, .expiringSoon)
+            if let expiry = item.expiryDate {
+                if expiry <= now {
+                    return (item, .expired)
+                }
+                if expiry <= expiryThreshold {
+                    return (item, .expiringSoon)
+                }
             }
             if item.lastVerified <= staleThreshold && !item.neverStale {
                 return (item, .notVerified)
             }
             return nil
+        }
+        .sorted {
+            if $0.reason.rank != $1.reason.rank { return $0.reason.rank < $1.reason.rank }
+            return $0.item.name < $1.item.name
         }
     }
 
@@ -90,13 +117,22 @@ struct HomeTab: View {
         return recentStore.orderedIDs.compactMap { byID[$0] }
     }
 
+    /// Free tier at (or over) the item cap — adding must show the paywall, not the form.
+    private var atFreeLimit: Bool {
+        !storeKit.isPro && allItems.count >= FeatureFlags.freeItemLimit
+    }
+
     // MARK: Body
 
     var body: some View {
         NavigationStack {
             Group {
                 if !searchText.isEmpty {
-                    searchResultsContent
+                    SearchResultsView(
+                        searchText: searchText,
+                        onSelectItem: { selectedItem = $0 },
+                        onNavigate: { searchText = "" }
+                    )
                 } else if rootAreas.isEmpty {
                     emptyState
                 } else {
@@ -111,7 +147,15 @@ struct HomeTab: View {
             )
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { showAddArea = true } label: {
+                    Menu {
+                        Button { presentQuickAdd(in: nil) } label: {
+                            Label("New Item", systemImage: "plus.square")
+                        }
+                        .disabled(rootAreas.isEmpty)
+                        Button { showAddArea = true } label: {
+                            Label("New Space", systemImage: "folder.badge.plus")
+                        }
+                    } label: {
                         Image(systemName: "plus")
                     }
                 }
@@ -131,6 +175,15 @@ struct HomeTab: View {
         .sheet(item: $selectedItem) {
             ItemDetailSheet(item: $0)
         }
+        .sheet(isPresented: $showQuickAdd) {
+            QuickAddSheet()
+        }
+        .sheet(item: $quickAddArea) {
+            QuickAddSheet(location: $0)
+        }
+        .sheet(item: $areaToEdit) {
+            LocationDetailSheet(location: $0)
+        }
         .sheet(isPresented: $showUpgradePrompt) {
             UpgradePromptSheet(
                 message: "You have \(allItems.count) items. Unlock Stash Pro for unlimited items, photos, and data export."
@@ -138,102 +191,16 @@ struct HomeTab: View {
         }
     }
 
-    // MARK: Search
-
-    /// Items whose own name or notes field matches — location name is intentionally excluded
-    /// so location matches surface only in the Spaces section.
-    private var filteredItems: [Item] {
-        let q = searchText.lowercased().trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return [] }
-        return allItems.filter { item in
-            item.name.lowercased().contains(q) ||
-            (item.notes?.lowercased().contains(q) == true)
-        }
-    }
-
-    /// Locations whose name matches the query.
-    private var filteredLocations: [Location] {
-        let q = searchText.lowercased().trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return [] }
-        return allLocations
-            .filter { $0.name.lowercased().contains(q) }
-            .sorted { $0.name < $1.name }
-    }
-
-    @ViewBuilder
-    private var searchResultsContent: some View {
-        let items     = filteredItems
-        let locations = filteredLocations
-
-        if items.isEmpty && locations.isEmpty {
-            VStack {
-                Spacer()
-                Text("No results for \"\(searchText)\"")
-                    .foregroundStyle(Color(.secondaryLabel))
-                    .multilineTextAlignment(.center)
-                    .padding()
-                Spacer()
-            }
+    /// Quick add gated by the free-tier cap: at the limit the paywall shows
+    /// instead of the entry form. nil area = pickable location (Home "+").
+    private func presentQuickAdd(in area: Location?) {
+        if atFreeLimit {
+            showUpgradePrompt = true
+        } else if let area {
+            quickAddArea = area
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 20) {
-
-                    // MARK: Items section
-                    if !items.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Items")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(Color(.secondaryLabel))
-                                .padding(.horizontal, 4)
-
-                            VStack(spacing: 0) {
-                                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                                    SearchResultRow(item: item, onTap: { selectedItem = item })
-                                    if index < items.count - 1 {
-                                        Divider().padding(.leading, 16)
-                                    }
-                                }
-                            }
-                            .background(Color(.secondarySystemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                        }
-                    }
-
-                    // MARK: Spaces section
-                    if !locations.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Spaces")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(Color(.secondaryLabel))
-                                .padding(.horizontal, 4)
-
-                            VStack(spacing: 0) {
-                                ForEach(Array(locations.enumerated()), id: \.element.id) { index, location in
-                                    SearchLocationRow(location: location) {
-                                        navigateToLocation(location)
-                                    }
-                                    if index < locations.count - 1 {
-                                        Divider().padding(.leading, 52)
-                                    }
-                                }
-                            }
-                            .background(Color(.secondarySystemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                        }
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
-            }
+            showQuickAdd = true
         }
-    }
-
-    /// Deep-links into the Browse tab at the given location, building the full ancestor chain.
-    private func navigateToLocation(_ location: Location) {
-        navState.browseNavigationPath = location.ancestorChain
-        navState.selectedTab = 1
     }
 
     // MARK: Main content
@@ -284,11 +251,7 @@ struct HomeTab: View {
                     .buttonStyle(.plain)
                 }
             } header: {
-                Text("Items without a place")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(Color(.secondaryLabel))
-                    .textCase(nil)
+                SectionHeader(title: "Items without a place", level: .secondary)
             }
         }
     }
@@ -332,55 +295,87 @@ struct HomeTab: View {
     @ViewBuilder
     private var needsAttentionSection: some View {
         let items = needsAttentionItems
+        let displayed = showAllAttention ? items : Array(items.prefix(Self.attentionCap))
         if !items.isEmpty {
             Section {
-                ForEach(items, id: \.item.id) { entry in
+                ForEach(displayed, id: \.item.id) { entry in
                     NeedsAttentionRow(
                         item: entry.item,
                         reason: entry.reason,
                         onTap: { selectedItem = entry.item },
                         onNeverStale: entry.reason == .notVerified
-                            ? { entry.item.neverStale = true }
+                            ? { Haptics.write(); entry.item.neverStale = true }
                             : nil
                     )
                     .listRowInsets(EdgeInsets())
                     .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                        if entry.reason == .lowStock {
-                            Button {
-                                entry.item.markAsOrdered()
-                            } label: {
-                                Label("Mark as Ordered", systemImage: "shippingbox.fill")
-                            }
-                            .tint(.orange)
-                        } else if entry.reason == .outOfPlace {
-                            Button {
-                                entry.item.returnToPlace()
-                            } label: {
-                                Label("Return to Place", systemImage: "arrow.down.circle.fill")
-                            }
-                            .tint(.teal)
-                        } else if entry.reason == .notVerified {
-                            Button {
-                                entry.item.markAsVerified()
-                            } label: {
-                                Label("Mark as Verified", systemImage: "checkmark.circle.fill")
-                            }
-                            .tint(.teal)
-                            Button {
-                                entry.item.neverStale = true
-                            } label: {
-                                Label("Always Verified", systemImage: "checkmark.shield.fill")
-                            }
-                            .tint(.teal)
-                        }
+                        attentionSwipeActions(for: entry)
                     }
                 }
+
+                // Cap row — a long attention list must not push Your Spaces
+                // below the fold.
+                if items.count > Self.attentionCap {
+                    Button {
+                        withAnimation { showAllAttention.toggle() }
+                    } label: {
+                        Text(showAllAttention ? "Show fewer" : "Show all (\(items.count))")
+                            .font(.subheadline)
+                            .foregroundStyle(.teal)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    .buttonStyle(.plain)
+                }
             } header: {
-                Text("Needs Attention")
-                    .font(.title2).bold()
-                    .foregroundStyle(Color(.label))
-                    .textCase(nil)
+                SectionHeader(title: "Needs Attention", level: .primary)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func attentionSwipeActions(for entry: (item: Item, reason: AttentionReason)) -> some View {
+        switch entry.reason {
+        case .lowStock:
+            Button {
+                Haptics.write()
+                entry.item.markAsOrdered()
+            } label: {
+                Label("Mark as Ordered", systemImage: "shippingbox.fill")
+            }
+            // Ordering moves the item to the calm "on order" state (C1 teal),
+            // not the orange low-stock warning it's leaving behind.
+            .tint(StatusColor.onOrder.color)
+        case .outOfPlace:
+            Button {
+                Haptics.write()
+                entry.item.returnToPlace()
+            } label: {
+                Label("Return to Place", systemImage: "arrow.down.circle.fill")
+            }
+            .tint(.teal)
+        case .expired, .expiringSoon:
+            Button {
+                Haptics.write()
+                entry.item.markAsReplaced()
+            } label: {
+                Label("Replaced it", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .tint(.teal)
+        case .notVerified:
+            Button {
+                Haptics.write()
+                entry.item.markAsVerified()
+            } label: {
+                Label("Mark as Verified", systemImage: "checkmark.circle.fill")
+            }
+            .tint(.teal)
+            Button {
+                Haptics.write()
+                entry.item.neverStale = true
+            } label: {
+                Label("Always Verified", systemImage: "checkmark.shield.fill")
+            }
+            .tint(.teal)
         }
     }
 
@@ -398,6 +393,23 @@ struct HomeTab: View {
                         AreaCard(area: area)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        Button { presentQuickAdd(in: area) } label: {
+                            Label("Add Item", systemImage: "plus.square")
+                        }
+                        Button { areaToEdit = area } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        if !area.childList.isEmpty {
+                            Button {
+                                navState.pendingReorderLocationID = area.id
+                                navState.browseNavigationPath = [area]
+                                navState.selectedTab = 1
+                            } label: {
+                                Label("Reorder Spaces", systemImage: "arrow.up.arrow.down")
+                            }
+                        }
+                    }
                 }
             }
             .padding(.vertical, 4)
@@ -405,10 +417,7 @@ struct HomeTab: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
         } header: {
-            Text("Your Spaces")
-                .font(.title2).bold()
-                .foregroundStyle(Color(.label))
-                .textCase(nil)
+            SectionHeader(title: "Your Spaces", level: .primary)
         }
     }
 
@@ -420,18 +429,11 @@ struct HomeTab: View {
         if !items.isEmpty {
             Section {
                 ForEach(items) { item in
-                    Button { selectedItem = item } label: {
-                        RecentlyAccessedRow(item: item)
-                    }
-                    .buttonStyle(.plain)
-                    .listRowInsets(EdgeInsets())
+                    RecentlyAccessedRow(item: item, onTap: { selectedItem = item })
+                        .listRowInsets(EdgeInsets())
                 }
             } header: {
-                Text("Recently Accessed")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(Color(.secondaryLabel))
-                    .textCase(nil)
+                SectionHeader(title: "Recently Accessed", level: .secondary)
             }
         }
     }
@@ -536,17 +538,16 @@ private struct NeedsAttentionRow: View {
                                 .foregroundStyle(Color(.secondaryLabel))
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onTap() }
 
-                    Spacer()
+                    VStack(alignment: .trailing, spacing: 6) {
+                        StatusBadge(text: reason.label, color: reason.color, filled: true)
 
-                    Text(reason.label)
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundStyle(reason.color)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(reason.color.opacity(0.12))
-                        .clipShape(Capsule())
+                        // Inline ± so low stock can be fixed without opening the sheet
+                        QuantityInputView(item: item)
+                    }
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 10)
@@ -564,8 +565,6 @@ private struct NeedsAttentionRow: View {
                 }
             }
         }
-        .contentShape(Rectangle())
-        .onTapGesture { onTap() }
     }
 
     private var locationPath: String {
@@ -573,62 +572,11 @@ private struct NeedsAttentionRow: View {
     }
 }
 
-// MARK: - Search location row
-
-private struct SearchLocationRow: View {
-    let location: Location
-    let onTap: () -> Void
-
-    private var areaColor: Color {
-        rootAreaColor(for: location) ?? .teal
-    }
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                LocationIconView(
-                    icon: location.icon ?? "folder.fill",
-                    font: .body,
-                    color: location.icon != nil ? areaColor : Color(.secondaryLabel)
-                )
-                .frame(width: 28)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(location.name)
-                        .font(.headline)
-                        .foregroundStyle(Color(.label))
-                    if !ancestorPath.isEmpty {
-                        Text(ancestorPath)
-                            .font(.caption)
-                            .foregroundStyle(Color(.secondaryLabel))
-                    }
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(Color(.tertiaryLabel))
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// Full path of ancestors above this location, e.g. "Kitchen › Cupboards".
-    /// Empty if this is a root area.
-    private var ancestorPath: String {
-        location.ancestorChain.dropLast().map(\.name).joined(separator: " › ")
-    }
-}
-
 // MARK: - Recently Accessed row
 
 private struct RecentlyAccessedRow: View {
     let item: Item
+    let onTap: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -638,22 +586,19 @@ private struct RecentlyAccessedRow: View {
                     .foregroundStyle(Color(.label))
                 if !locationPath.isEmpty {
                     Text(locationPath)
-                        .font(.system(size: 10))
+                        .font(.caption2)
                         .foregroundStyle(Color(.secondaryLabel))
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { onTap() }
 
-            Spacer()
-
-            if let qty = item.quantity {
-                Text(item.unit.map { "\(qty) \($0)" } ?? "\(qty)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(Color(.secondaryLabel))
-            }
+            // Inline ± replaces the old read-only quantity text
+            QuantityInputView(item: item)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 5)
-        .contentShape(Rectangle())
     }
 
     private var locationPath: String {

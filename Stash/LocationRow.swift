@@ -26,25 +26,24 @@ struct LocationRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Thumbnail: photo or icon (SF Symbol or emoji)
+            // Thumbnail: cached photo, or icon (SF Symbol or emoji) as placeholder
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(areaColor?.opacity(0.15) ?? Color(.systemGray5))
                     .frame(width: 44, height: 44)
 
-                if let photoData = location.photo, let uiImage = UIImage(data: photoData) {
-                    Image(uiImage: uiImage)
+                CachedThumbnail(
+                    id: location.id,
+                    size: CGSize(width: 44, height: 44),
+                    dataProvider: { location.photo }
+                ) { image in
+                    image
                         .resizable()
                         .scaledToFill()
                         .frame(width: 44, height: 44)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                } else if let icon = location.icon {
-                    LocationIconView(icon: icon, font: .title3, color: areaColor ?? .teal)
-                } else {
-                    // Default folder icon tinted in the area colour
-                    Image(systemName: "folder.fill")
-                        .font(.title3)
-                        .foregroundStyle(areaColor ?? .teal)
+                } placeholder: {
+                    iconPlaceholder
                 }
             }
 
@@ -75,5 +74,17 @@ struct LocationRow: View {
                 .foregroundStyle(Color(.tertiaryLabel))
         }
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var iconPlaceholder: some View {
+        if let icon = location.icon {
+            LocationIconView(icon: icon, font: .title3, color: areaColor ?? .teal)
+        } else {
+            // Default folder icon tinted in the area colour
+            Image(systemName: "folder.fill")
+                .font(.title3)
+                .foregroundStyle(areaColor ?? .teal)
+        }
     }
 }

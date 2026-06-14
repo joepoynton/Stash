@@ -18,22 +18,20 @@ struct AreaCard: View {
         area.color.flatMap { Color(hex: $0) } ?? .teal
     }
 
-    private var hasPhoto: Bool { area.photo != nil }
     private var hasColorTint: Bool { area.color != nil }
 
-    private var nameTextColor: Color {
-        if hasPhoto {
-            return hasColorTint ? tintColor : .white
-        } else if hasColorTint {
-            return .white
-        } else {
-            return Color(.label)
-        }
-    }
-
     var body: some View {
+        // Read the photo's presence once per render rather than via several
+        // computed properties that each re-fault the externally-stored blob.
+        let hasPhoto = area.photo != nil
+
+        // C7: on photo cards the title is always white for legibility — the
+        // area's colour identity is carried by the icon badge and nav tint,
+        // not the title, which could clash with a bright photo.
+        let nameTextColor: Color = hasPhoto ? .white : (hasColorTint ? .white : Color(.label))
+
         ZStack(alignment: .bottomLeading) {
-            backgroundLayer
+            backgroundLayer(hasPhoto: hasPhoto)
 
             // Gradient scrim on photo cards — runs full height so bright sky/pale
             // photos remain legible at the bottom without a harsh flat dimming band.
@@ -91,17 +89,27 @@ struct AreaCard: View {
     // MARK: - Background layer
 
     @ViewBuilder
-    private var backgroundLayer: some View {
-        if let data = area.photo, let uiImage = UIImage(data: data) {
-            // Photo background: GeometryReader ensures the image fills the
-            // 3:2 frame exactly without squashing — scaledToFill + clipped
-            // crops overflow rather than distorting the image.
-            GeometryReader { geo in
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .clipped()
+    private func backgroundLayer(hasPhoto: Bool) -> some View {
+        if hasPhoto {
+            // Photo background via the shared thumbnail cache at card resolution —
+            // the full ~1200px JPEG is decoded once, off-main, downscaled to the
+            // card, then served from memory on every subsequent render (P1).
+            CachedThumbnail(
+                id: area.id,
+                size: CGSize(width: 280, height: 187),
+                dataProvider: { area.photo }
+            ) { image in
+                GeometryReader { geo in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
+                }
+            } placeholder: {
+                // Shown only for the brief first decode; the scrim + white title
+                // sit on top, so it reads as a dimmed card, not an empty one.
+                Color(.secondarySystemBackground)
             }
         } else if let hexColor = area.color, let color = Color(hex: hexColor) {
             // Solid tinted background — icon in white

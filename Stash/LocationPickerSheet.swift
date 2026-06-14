@@ -26,41 +26,43 @@ struct LocationPickerSheet: View {
 
     // MARK: - Tree helpers
 
-    private var roots: [Location] {
-        allLocations
-            .filter { $0.parent == nil && !excludedIDs.contains($0.id) }
-            .sorted { $0.name < $1.name }
+    /// Groups every (non-excluded) location by its parent id once per render —
+    /// roots under the `nil` key. Replaces the previous per-node filtering of
+    /// the full location list, which was O(n²) on deep/wide trees (P5).
+    /// `allLocations` is already name-sorted by the @Query, so each group is too.
+    private var childrenByParent: [UUID?: [Location]] {
+        var dict: [UUID?: [Location]] = [:]
+        for loc in allLocations where !excludedIDs.contains(loc.id) {
+            dict[loc.parent?.id, default: []].append(loc)
+        }
+        return dict
     }
 
-    private func children(of location: Location) -> [Location] {
-        allLocations
-            .filter { $0.parent?.id == location.id && !excludedIDs.contains($0.id) }
-            .sorted { $0.name < $1.name }
-    }
+    /// Flattens the tree into visible rows, walking only expanded branches.
+    /// Each row carries its own `hasChildren` so the body never re-queries.
+    /// A visited-set bounds a corrupted parent/child cycle.
+    private func visibleRows(_ tree: [UUID?: [Location]]) -> [(location: Location, depth: Int, hasChildren: Bool)] {
+        var result: [(Location, Int, Bool)] = []
+        var visited = Set<UUID>()
 
-    private func hasChildren(_ location: Location) -> Bool {
-        allLocations.contains { $0.parent?.id == location.id && !excludedIDs.contains($0.id) }
-    }
-
-    /// Builds the list of visible rows by walking only expanded branches.
-    private var visibleRows: [(location: Location, depth: Int)] {
-        var result: [(Location, Int)] = []
-        appendVisible(roots, depth: 0, into: &result)
-        return result
-    }
-
-    private func appendVisible(_ locations: [Location], depth: Int, into result: inout [(Location, Int)]) {
-        for loc in locations {
-            result.append((loc, depth))
-            if expandedIDs.contains(loc.id) {
-                appendVisible(children(of: loc), depth: depth + 1, into: &result)
+        func appendVisible(_ locations: [Location], depth: Int) {
+            for loc in locations where visited.insert(loc.id).inserted {
+                let kids = tree[loc.id] ?? []
+                result.append((loc, depth, !kids.isEmpty))
+                if expandedIDs.contains(loc.id) {
+                    appendVisible(kids, depth: depth + 1)
+                }
             }
         }
+
+        appendVisible(tree[nil] ?? [], depth: 0)
+        return result
     }
 
     // MARK: - Body
 
     var body: some View {
+        let rows = visibleRows(childrenByParent)
         NavigationStack {
             List {
                 if allowTopLevel {
@@ -73,12 +75,12 @@ struct LocationPickerSheet: View {
                     }
                 }
 
-                ForEach(visibleRows, id: \.location.id) { entry in
+                ForEach(rows, id: \.location.id) { entry in
                     LocationPickerRow(
                         location: entry.location,
                         depth: entry.depth,
                         isExpanded: expandedIDs.contains(entry.location.id),
-                        hasChildren: hasChildren(entry.location),
+                        hasChildren: entry.hasChildren,
                         onToggle: {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 if expandedIDs.contains(entry.location.id) {

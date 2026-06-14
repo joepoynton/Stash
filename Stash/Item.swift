@@ -111,6 +111,14 @@ final class Item {
         lastVerified = Date()
     }
 
+    /// "Replaced it" on an expiring/expired item. The new product's expiry
+    /// isn't known at swipe time, so the date is cleared rather than guessed;
+    /// the user can set the real date from the detail sheet later.
+    func markAsReplaced() {
+        expiryDate = nil
+        lastVerified = Date()
+    }
+
     /// Records arrival of `count` units. Resets order status. Updates lastVerified.
     /// Quantity is only adjusted when tracking is already on — arrival must
     /// never silently switch quantity tracking on for an untracked item.

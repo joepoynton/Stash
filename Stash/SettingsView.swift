@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
+import CloudKit
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -28,6 +29,15 @@ struct SettingsView: View {
     @State private var showUpgradePrompt = false
     @State private var upgradeMessage = ""
     @State private var isRestoring = false
+
+    // Import confirmation (D6) — decoded and counted before any write.
+    @State private var pendingImport: ImportRoot? = nil
+    @State private var pendingAreaCount = 0
+    @State private var pendingItemCount = 0
+    @State private var showImportConfirm = false
+
+    // iCloud account status (D7 / F10)
+    @State private var iCloudStatusText = "Checking…"
 
     var body: some View {
         NavigationStack {
@@ -104,6 +114,16 @@ struct SettingsView: View {
                     .disabled(isRestoring)
                 }
 
+                // MARK: Sync
+
+                Section {
+                    LabeledContent("iCloud", value: iCloudStatusText)
+                } header: {
+                    Text("Sync")
+                } footer: {
+                    Text("Your inventory backs up and syncs across your devices through iCloud.")
+                }
+
                 // MARK: Notifications
 
                 Section("Notifications") {
@@ -114,6 +134,14 @@ struct SettingsView: View {
                             .foregroundStyle(Color(.tertiaryLabel))
                             .font(.subheadline)
                     }
+                }
+
+                // MARK: Tips (F11)
+
+                Section("Tips") {
+                    tipRow(icon: "hand.tap.fill", text: "Touch and hold any item for quick actions.")
+                    tipRow(icon: "arrow.up.right.square", text: "Swipe an item to mark it out of place.")
+                    tipRow(icon: "mappin.and.ellipse", text: "Tap an item's location path to jump straight there.")
                 }
 
                 // MARK: About
@@ -127,6 +155,7 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .task { await refreshICloudStatus() }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
@@ -156,12 +185,19 @@ struct SettingsView: View {
             ) { result in
                 switch result {
                 case .success(let url):
-                    importJSON(from: url)
+                    prepareImport(from: url)
                 case .failure:
                     importResultTitle = "Import Failed"
                     importResultMessage = "Could not open the file."
                     showImportResult = true
                 }
+            }
+            // Import confirmation — show what will be added before any write
+            .alert("Import Data?", isPresented: $showImportConfirm) {
+                Button("Import") { commitImport() }
+                Button("Cancel", role: .cancel) { pendingImport = nil }
+            } message: {
+                Text("This will add \(pendingAreaCount) \(pendingAreaCount == 1 ? "area" : "areas") and \(pendingItemCount) \(pendingItemCount == 1 ? "item" : "items") alongside your existing data.")
             }
             // Import result feedback
             .alert(importResultTitle, isPresented: $showImportResult) {
@@ -221,21 +257,51 @@ struct SettingsView: View {
         exportURL = nil
     }
 
+    // MARK: - iCloud status (D7 / F10)
+
+    private func refreshICloudStatus() async {
+        do {
+            let status = try await CKContainer.default().accountStatus()
+            switch status {
+            case .available:               iCloudStatusText = "Active"
+            case .noAccount:               iCloudStatusText = "Not signed in"
+            case .restricted:              iCloudStatusText = "Restricted"
+            case .couldNotDetermine:       iCloudStatusText = "Unavailable"
+            case .temporarilyUnavailable:  iCloudStatusText = "Temporarily unavailable"
+            @unknown default:              iCloudStatusText = "Unknown"
+            }
+        } catch {
+            iCloudStatusText = "Unavailable"
+        }
+    }
+
+    // MARK: - Tips (F11)
+
+    @ViewBuilder
+    private func tipRow(icon: String, text: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(.teal)
+                .frame(width: 24)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(Color(.label))
+        }
+    }
+
     // MARK: - Import
 
-    private func importJSON(from url: URL) {
+    /// Reads + decodes the file (the only step that needs file access), counts
+    /// what's inside, then asks for confirmation before writing anything (D6).
+    private func prepareImport(from url: URL) {
         guard url.startAccessingSecurityScopedResource() else {
-            importResultTitle = "Import Failed"
-            importResultMessage = "Permission denied — could not access the file."
-            showImportResult = true
+            showImportFailure("Permission denied — could not access the file.")
             return
         }
         defer { url.stopAccessingSecurityScopedResource() }
 
         guard let data = try? Data(contentsOf: url) else {
-            importResultTitle = "Import Failed"
-            importResultMessage = "Could not read the file."
-            showImportResult = true
+            showImportFailure("Could not read the file.")
             return
         }
 
@@ -243,36 +309,60 @@ struct SettingsView: View {
         decoder.dateDecodingStrategy = .iso8601
 
         guard let root = try? decoder.decode(ImportRoot.self, from: data) else {
-            importResultTitle = "Import Failed"
-            importResultMessage = "The file is not a valid Stash export."
-            showImportResult = true
+            showImportFailure("The file is not a valid Stash export.")
             return
         }
 
-        var itemCount = 0
+        pendingImport = root
+        pendingAreaCount = root.areas.count
+        pendingItemCount = root.areas.reduce(0) { $0 + $1.itemCount }
+        showImportConfirm = true
+    }
+
+    /// Performs the insert from the decoded, in-memory import. Enforces the
+    /// free-tier item cap so an import can never push a free user over the
+    /// limit (D6); locations themselves are not capped.
+    private func commitImport() {
+        guard let root = pendingImport else { return }
+        pendingImport = nil
+
+        var remaining = storeKit.isPro ? Int.max : max(0, FeatureFlags.freeItemLimit - allItems.count)
+        var importedCount = 0
+        var skipped = 0
+
         for area in root.areas {
             let location = Location(name: area.name, icon: area.icon, color: area.color, parent: nil)
+            location.sortOrder = area.sortOrder ?? 0
             modelContext.insert(location)
-            insertChildren(of: area, into: location, itemCount: &itemCount)
+            insertChildren(of: area, into: location, remaining: &remaining, importedCount: &importedCount, skipped: &skipped)
         }
 
         try? modelContext.save()
 
-        let areaCount = root.areas.count
-        let areaWord = areaCount == 1 ? "area" : "areas"
-        let itemWord = itemCount == 1 ? "item" : "items"
+        let areaWord = pendingAreaCount == 1 ? "area" : "areas"
+        let itemWord = importedCount == 1 ? "item" : "items"
         importResultTitle = "Import Complete"
-        importResultMessage = "Imported \(areaCount) \(areaWord) and \(itemCount) \(itemWord)."
+        if skipped > 0 {
+            let skippedWord = skipped == 1 ? "item was" : "items were"
+            importResultMessage = "Imported \(pendingAreaCount) \(areaWord) and \(importedCount) \(itemWord). \(skipped) \(skippedWord) skipped because the free plan is limited to \(FeatureFlags.freeItemLimit) items — upgrade to Stash Pro for unlimited items."
+        } else {
+            importResultMessage = "Imported \(pendingAreaCount) \(areaWord) and \(importedCount) \(itemWord)."
+        }
         showImportResult = true
     }
 
-    private func insertChildren(of imported: ImportLocation, into location: Location, itemCount: inout Int) {
-        for importedChild in imported.children ?? [] {
+    private func insertChildren(of node: ImportLocation, into location: Location, remaining: inout Int, importedCount: inout Int, skipped: inout Int) {
+        for importedChild in node.children ?? [] {
             let child = Location(name: importedChild.name, icon: importedChild.icon, color: importedChild.color, parent: location)
+            child.sortOrder = importedChild.sortOrder ?? 0
             modelContext.insert(child)
-            insertChildren(of: importedChild, into: child, itemCount: &itemCount)
+            insertChildren(of: importedChild, into: child, remaining: &remaining, importedCount: &importedCount, skipped: &skipped)
         }
-        for importedItem in imported.items ?? [] {
+        for importedItem in node.items ?? [] {
+            guard remaining > 0 else {
+                skipped += 1
+                continue
+            }
             let item = Item(name: importedItem.name, location: location)
             item.notes = importedItem.notes
             item.quantity = importedItem.quantity
@@ -282,11 +372,23 @@ struct SettingsView: View {
             if importedItem.orderStatus == OrderStatus.onOrder.rawValue {
                 item.orderStatusRaw = OrderStatus.onOrder.rawValue
             }
+            // D6: round-trip the previously-omitted state.
+            item.isOutOfPlace = importedItem.isOutOfPlace ?? false
+            item.outOfPlaceNote = importedItem.outOfPlaceNote
+            item.neverStale = importedItem.neverStale ?? false
+            item.manuallyRestocking = importedItem.manuallyRestocking ?? false
             if let dateAdded = importedItem.dateAdded { item.dateAdded = dateAdded }
             if let lastVerified = importedItem.lastVerified { item.lastVerified = lastVerified }
             modelContext.insert(item)
-            itemCount += 1
+            importedCount += 1
+            remaining -= 1
         }
+    }
+
+    private func showImportFailure(_ message: String) {
+        importResultTitle = "Import Failed"
+        importResultMessage = message
+        showImportResult = true
     }
 }
 
@@ -315,6 +417,7 @@ private struct ExportLocation: Encodable {
     let name: String
     let icon: String?
     let color: String?
+    let sortOrder: Int
     let children: [ExportLocation]
     let items: [ExportItem]
 
@@ -323,6 +426,7 @@ private struct ExportLocation: Encodable {
         name = location.name
         icon = location.icon
         color = location.color
+        sortOrder = location.sortOrder
         children = location.childList
             .sorted { $0.name < $1.name }
             .map { ExportLocation(from: $0) }
@@ -341,6 +445,10 @@ private struct ExportItem: Encodable {
     let minimumQuantity: Int?
     let expiryDate: Date?
     let orderStatus: String
+    let isOutOfPlace: Bool
+    let outOfPlaceNote: String?
+    let neverStale: Bool
+    let manuallyRestocking: Bool
     let dateAdded: Date
     let lastVerified: Date
 
@@ -355,6 +463,11 @@ private struct ExportItem: Encodable {
         // Export the effective status (including derived .low) so the
         // JSON faithfully reflects the item's visible state.
         orderStatus = item.orderStatus.rawValue
+        // D6: previously omitted, so a backup/restore round-trip lost this state.
+        isOutOfPlace = item.isOutOfPlace
+        outOfPlaceNote = item.outOfPlaceNote
+        neverStale = item.neverStale
+        manuallyRestocking = item.manuallyRestocking
         dateAdded = item.dateAdded
         lastVerified = item.lastVerified
     }
@@ -372,8 +485,14 @@ private struct ImportLocation: Decodable {
     let name: String
     let icon: String?
     let color: String?
+    let sortOrder: Int?            // Optional — older exports omit it.
     let children: [ImportLocation]?
     let items: [ImportItem]?
+
+    /// Total items in this subtree, used for the pre-import confirmation count.
+    var itemCount: Int {
+        (items?.count ?? 0) + (children?.reduce(0) { $0 + $1.itemCount } ?? 0)
+    }
 }
 
 private struct ImportItem: Decodable {
@@ -384,6 +503,11 @@ private struct ImportItem: Decodable {
     let minimumQuantity: Int?
     let expiryDate: Date?
     let orderStatus: String?
+    // Optional — older exports omit these (D6, backward-compatible).
+    let isOutOfPlace: Bool?
+    let outOfPlaceNote: String?
+    let neverStale: Bool?
+    let manuallyRestocking: Bool?
     let dateAdded: Date?
     let lastVerified: Date?
 }

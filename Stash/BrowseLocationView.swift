@@ -5,9 +5,30 @@
 //  One screen in the Browse navigation stack. Shows child Locations ("Spaces")
 //  and Items for the given location, with a tappable breadcrumb in the toolbar.
 //
+//  "+" is the fast path: a single tap opens Quick Add; the full menu
+//  (Add Space, Add Item, Add Photo, Reorder) sits behind a long-press.
+//
 
 import SwiftUI
 import SwiftData
+
+// MARK: - Item sort mode (F9)
+
+enum BrowseItemSort: String, CaseIterable, Identifiable {
+    case alphabetical
+    case lowStockFirst
+    case recentlyAdded
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .alphabetical:  "Alphabetical"
+        case .lowStockFirst: "Low stock first"
+        case .recentlyAdded: "Recently added"
+        }
+    }
+}
 
 struct BrowseLocationView: View {
     let location: Location
@@ -15,10 +36,24 @@ struct BrowseLocationView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(StoreKitManager.self) private var storeKit
+    @Environment(NavigationState.self) private var navState
+    @Query private var allItems: [Item]
 
     // Sheet / dialog state
     @State private var activeSheet: BrowseSheet? = nil
     @State private var showPhotoUpgradePrompt = false
+    @State private var showItemLimitPrompt = false
+    @State private var pickerExpandedIDs: Set<UUID> = []
+
+    // Search
+    @State private var searchText = ""
+
+    // Item sort — shared across all Browse screens
+    @AppStorage("browseItemSort") private var itemSortRaw = BrowseItemSort.alphabetical.rawValue
+
+    // F11: one-time long-press discovery tip. Global flag — shows on the first
+    // Browse screen that has items, then never again (dismissed or long-press used).
+    @AppStorage("browseCoachMarkSeen") private var coachMarkSeen = false
 
     // Location delete state
     @State private var locationToDelete: Location? = nil
@@ -62,12 +97,34 @@ struct BrowseLocationView: View {
         }
     }
 
+    private var itemSort: BrowseItemSort {
+        BrowseItemSort(rawValue: itemSortRaw) ?? .alphabetical
+    }
+
     private var sortedItems: [Item] {
-        location.itemList.sorted { $0.name < $1.name }
+        let list = location.itemList
+        switch itemSort {
+        case .alphabetical:
+            return list.sorted { $0.name < $1.name }
+        case .lowStockFirst:
+            return list.sorted { a, b in
+                let aLow = a.orderStatus == .low
+                let bLow = b.orderStatus == .low
+                if aLow != bLow { return aLow }
+                return a.name < b.name
+            }
+        case .recentlyAdded:
+            return list.sorted { $0.dateAdded > $1.dateAdded }
+        }
     }
 
     private var ancestorChain: [Location] {
         location.ancestorChain
+    }
+
+    /// Free tier at (or over) the item cap — adding must show the paywall, not the form.
+    private var atFreeLimit: Bool {
+        !storeKit.isPro && allItems.count >= FeatureFlags.freeItemLimit
     }
 
     // MARK: - Body
@@ -77,76 +134,138 @@ struct BrowseLocationView: View {
         let items    = sortedItems
         let mixed    = !children.isEmpty && !items.isEmpty
 
-        listContent(children: children, items: items, mixed: mixed)
-            .tint(areaTint)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) { breadcrumbHeader }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    if editMode.isEditing {
-                        Button("Done") {
-                            withAnimation { editMode = .inactive }
-                        }
-                    } else {
-                        Menu {
-                            Button { activeSheet = .quickAdd } label: {
-                                Label("Quick Add", systemImage: "bolt")
-                            }
-                            Button { activeSheet = .addLocation } label: {
-                                Label("Add Space", systemImage: "folder.badge.plus")
-                            }
-                            Button { activeSheet = .addItem } label: {
-                                Label("Add Item", systemImage: "plus.square")
-                            }
-                            Button {
-                                if storeKit.isPro {
-                                    showLocationPhotoActions = true
-                                } else {
-                                    showPhotoUpgradePrompt = true
-                                }
-                            } label: {
-                                Label(
-                                    location.photo != nil ? "Replace Photo" : "Add Photo",
-                                    systemImage: storeKit.isPro ? "camera" : "lock.fill"
-                                )
-                            }
-                            if !location.childList.isEmpty {
-                                Button {
-                                    withAnimation { editMode = .active }
-                                } label: {
-                                    Label("Reorder Spaces", systemImage: "arrow.up.arrow.down")
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "plus")
-                        }
+        Group {
+            if !searchText.isEmpty {
+                SearchResultsView(
+                    searchText: searchText,
+                    onSelectItem: { activeSheet = .itemDetail($0) },
+                    onNavigate: { searchText = "" }
+                )
+            } else {
+                listContent(children: children, items: items, mixed: mixed)
+            }
+        }
+        .searchable(
+            text: $searchText,
+            placement: .navigationBarDrawer(displayMode: .automatic),
+            prompt: "Search items, spaces, notes…"
+        )
+        .tint(areaTint)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) { breadcrumbHeader }
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                if editMode.isEditing {
+                    Button("Done") {
+                        withAnimation { editMode = .inactive }
                     }
+                } else {
+                    if location.itemList.count > 1 {
+                        sortMenu
+                    }
+                    addMenu
                 }
             }
-            .modifier(BrowseLocationSheets(
-                location: location,
-                activeSheet: $activeSheet,
-                showCamera: $showCamera,
-                showLibraryPicker: $showLibraryPicker,
-                showLocationPhotoActions: $showLocationPhotoActions,
-                locationToDelete: $locationToDelete,
-                showLocationDeleteActionSheet: $showLocationDeleteActionSheet,
-                showCascadeConfirm: $showCascadeConfirm,
-                showEmptyLocationDeleteAlert: $showEmptyLocationDeleteAlert,
-                itemToDelete: $itemToDelete,
-                showItemDeleteAlert: $showItemDeleteAlert,
-                moveContentsToParent: moveContentsToParent,
-                cascadeDelete: cascadeDelete,
-                modelContext: modelContext
-            ))
-            .sheet(isPresented: $showPhotoUpgradePrompt) {
-                UpgradePromptSheet(message: "Unlock Stash Pro to add photos to your items and locations.")
+        }
+        .onAppear {
+            // Deep-link from an Area card's "Reorder Spaces" context action.
+            if navState.pendingReorderLocationID == location.id {
+                navState.pendingReorderLocationID = nil
+                withAnimation { editMode = .active }
             }
+        }
+        .modifier(BrowseLocationSheets(
+            location: location,
+            activeSheet: $activeSheet,
+            pickerExpandedIDs: $pickerExpandedIDs,
+            showCamera: $showCamera,
+            showLibraryPicker: $showLibraryPicker,
+            showLocationPhotoActions: $showLocationPhotoActions,
+            locationToDelete: $locationToDelete,
+            showLocationDeleteActionSheet: $showLocationDeleteActionSheet,
+            showCascadeConfirm: $showCascadeConfirm,
+            showEmptyLocationDeleteAlert: $showEmptyLocationDeleteAlert,
+            itemToDelete: $itemToDelete,
+            showItemDeleteAlert: $showItemDeleteAlert,
+            moveContentsToParent: moveContentsToParent,
+            cascadeDelete: cascadeDelete,
+            modelContext: modelContext
+        ))
+        .sheet(isPresented: $showPhotoUpgradePrompt) {
+            UpgradePromptSheet(message: "Unlock Stash Pro to add photos to your items and locations.")
+        }
+        .sheet(isPresented: $showItemLimitPrompt) {
+            UpgradePromptSheet(
+                message: "You've used \(allItems.count) of \(FeatureFlags.freeItemLimit) free items. Unlock Stash Pro for unlimited items, photos, and data export."
+            )
+        }
+    }
+
+    // MARK: - Toolbar menus
+
+    /// Tap = Quick Add (the highest-frequency action); long-press = full menu.
+    private var addMenu: some View {
+        Menu {
+            Button { activeSheet = .addLocation } label: {
+                Label("Add Space", systemImage: "folder.badge.plus")
+            }
+            Button { presentAddItem() } label: {
+                Label("Add Item", systemImage: "plus.square")
+            }
+            Button {
+                if storeKit.isPro {
+                    showLocationPhotoActions = true
+                } else {
+                    showPhotoUpgradePrompt = true
+                }
+            } label: {
+                Label(
+                    location.photo != nil ? "Replace Photo" : "Add Photo",
+                    systemImage: storeKit.isPro ? "camera" : "lock.fill"
+                )
+            }
+            if !location.childList.isEmpty {
+                Button {
+                    withAnimation { editMode = .active }
+                } label: {
+                    Label("Reorder Spaces", systemImage: "arrow.up.arrow.down")
+                }
+            }
+        } label: {
+            Image(systemName: "plus")
+        } primaryAction: {
+            presentQuickAdd()
+        }
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            Picker("Sort items", selection: $itemSortRaw) {
+                ForEach(BrowseItemSort.allCases) { mode in
+                    Text(mode.label).tag(mode.rawValue)
+                }
+            }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+        }
+    }
+
+    // MARK: - Free-tier gate (U9): paywall at presentation, not after the form
+
+    private func presentQuickAdd() {
+        if atFreeLimit { showItemLimitPrompt = true } else { activeSheet = .quickAdd }
+    }
+
+    private func presentAddItem() {
+        if atFreeLimit { showItemLimitPrompt = true } else { activeSheet = .addItem }
     }
 
     @ViewBuilder
     private func listContent(children: [Location], items: [Item], mixed: Bool) -> some View {
         List {
+            if !coachMarkSeen && !items.isEmpty {
+                coachMark
+            }
             if mixed {
                 Section("Spaces") { locationRows(children) }
                 Section("Items")  { itemRows(items) }
@@ -163,11 +282,35 @@ struct BrowseLocationView: View {
                 } description: {
                     Text("No items or sub-spaces here yet.")
                 } actions: {
-                    Button("+ Add your first item") { activeSheet = .addItem }
+                    Button("+ Add your first item") { presentAddItem() }
                         .buttonStyle(.bordered)
                         .tint(areaTint)
                 }
             }
+        }
+    }
+
+    // MARK: - Coach mark (F11)
+
+    private var coachMark: some View {
+        Section {
+            HStack(spacing: 10) {
+                Image(systemName: "hand.tap.fill")
+                    .foregroundStyle(areaTint)
+                Text("Tip: touch and hold any item for quick actions.")
+                    .font(.subheadline)
+                    .foregroundStyle(Color(.label))
+                Spacer(minLength: 8)
+                Button {
+                    withAnimation { coachMarkSeen = true }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption.bold())
+                        .foregroundStyle(Color(.secondaryLabel))
+                }
+                .buttonStyle(.plain)
+            }
+            .listRowBackground(areaTint.opacity(0.12))
         }
     }
 
@@ -204,6 +347,27 @@ struct BrowseLocationView: View {
                 ItemRow(item: item)
             }
             .buttonStyle(.plain)
+            .contextMenu {
+                ItemContextMenuContent(
+                    item: item,
+                    onMove: { activeSheet = .itemMove(item) },
+                    onDelete: {
+                        itemToDelete = item
+                        showItemDeleteAlert = true
+                    }
+                )
+            }
+            // Once the user discovers the long-press, retire the coach mark.
+            // simultaneousGesture runs alongside the context menu without
+            // consuming the press, so quick actions still open normally.
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                    if !coachMarkSeen { coachMarkSeen = true }
+                }
+            )
+            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                OutOfPlaceSwipeButton(item: item)
+            }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 Button(role: .destructive) {
                     itemToDelete = item
@@ -277,91 +441,6 @@ struct BrowseLocationView: View {
     }
 }
 
-// MARK: - Quick Add Sheet
-
-private struct QuickAddSheet: View {
-    let location: Location
-
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-    @Environment(StoreKitManager.self) private var storeKit
-    @Query private var allItems: [Item]
-
-    @State private var name = ""
-    @State private var addedItems: [Item] = []
-    @State private var itemToDetail: Item? = nil
-    @State private var showUpgradePrompt = false
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 0) {
-                TextField("Item name", text: $name)
-                    .font(.body)
-                    .padding()
-                    .focused($focused)
-                    .onSubmit { saveAndClear() }
-                    .submitLabel(.return)
-
-                Divider()
-
-                if !addedItems.isEmpty {
-                    List(addedItems) { item in
-                        HStack {
-                            Text(item.name)
-                                .foregroundStyle(Color(.label))
-                            Spacer()
-                            Button("Add detail") {
-                                // Unfocus the text field so the new sheet
-                                // gets clean keyboard state.
-                                focused = false
-                                itemToDetail = item
-                            }
-                            .font(.subheadline)
-                            .foregroundStyle(.teal)
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .listStyle(.plain)
-                } else {
-                    Spacer()
-                }
-            }
-            .navigationTitle("Quick Add")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .onAppear { focused = true }
-            .sheet(item: $itemToDetail, onDismiss: { focused = true }) {
-                ItemDetailSheet(item: $0)
-            }
-            .sheet(isPresented: $showUpgradePrompt, onDismiss: { focused = true }) {
-                UpgradePromptSheet(
-                    message: "You've used \(allItems.count) of \(FeatureFlags.freeItemLimit) free items. Unlock Stash Pro for unlimited items, photos, and data export."
-                )
-            }
-        }
-    }
-
-    private func saveAndClear() {
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-        guard storeKit.isPro || allItems.count < FeatureFlags.freeItemLimit else {
-            focused = false
-            showUpgradePrompt = true
-            return
-        }
-        let item = Item(name: trimmed, location: location)
-        modelContext.insert(item)
-        addedItems.insert(item, at: 0)   // newest at top
-        name = ""
-        focused = true
-    }
-}
-
 // MARK: - Sheet enum
 
 private enum BrowseSheet: Identifiable, Equatable {
@@ -370,6 +449,7 @@ private enum BrowseSheet: Identifiable, Equatable {
     case addLocation
     case quickAdd
     case itemDetail(Item)
+    case itemMove(Item)
     case locationEdit(Location)
     case locationPhotoOptions
     case photosPicker
@@ -380,6 +460,7 @@ private enum BrowseSheet: Identifiable, Equatable {
         case .addLocation:               return "addLocation"
         case .quickAdd:                  return "quickAdd"
         case .itemDetail(let item):      return "itemDetail-\(item.id)"
+        case .itemMove(let item):        return "itemMove-\(item.id)"
         case .locationEdit(let loc):     return "locationEdit-\(loc.id)"
         case .locationPhotoOptions:      return "locationPhotoOptions"
         case .photosPicker:              return "photosPicker"
@@ -392,6 +473,7 @@ private enum BrowseSheet: Identifiable, Equatable {
 private struct BrowseLocationSheets: ViewModifier {
     let location: Location
     @Binding var activeSheet: BrowseSheet?
+    @Binding var pickerExpandedIDs: Set<UUID>
     @Binding var showCamera: Bool
     @Binding var showLibraryPicker: Bool
     @Binding var showLocationPhotoActions: Bool
@@ -425,6 +507,19 @@ private struct BrowseLocationSheets: ViewModifier {
                 case .addLocation:           AddLocationSheet(parentLocation: location)
                 case .quickAdd:              QuickAddSheet(location: location)
                 case .itemDetail(let item):  ItemDetailSheet(item: item)
+                case .itemMove(let item):
+                    LocationPickerSheet(
+                        title: "Move to…",
+                        excludedIDs: [],
+                        allowTopLevel: false,
+                        expandedIDs: $pickerExpandedIDs,
+                        onSelect: { newLocation in
+                            if let loc = newLocation {
+                                item.location = loc
+                                item.lastVerified = Date()
+                            }
+                        }
+                    )
                 case .locationEdit(let loc): LocationDetailSheet(location: loc)
                 case .locationPhotoOptions:  EmptyView()
                 case .photosPicker:          EmptyView()
@@ -434,17 +529,19 @@ private struct BrowseLocationSheets: ViewModifier {
                 Button("Take Photo") { showCamera = true }
                 Button("Choose from Library") { showLibraryPicker = true }
                 if location.photo != nil {
-                    Button("Remove Photo", role: .destructive) { location.photo = nil }
+                    Button("Remove Photo", role: .destructive) {
+                        location.photo = nil
+                        ThumbnailCache.shared.invalidate(id: location.id)
+                    }
                 }
                 Button("Cancel", role: .cancel) {}
             }
             .fullScreenCover(isPresented: $showCamera) {
                 CameraView { data in
                     Task {
-                        let image = UIImage(data: data)
-                        let compressed = image.flatMap { ImageCompressor.compress($0) }
-                        await MainActor.run {
-                            if let compressed { location.photo = compressed }
+                        if let compressed = await ImageCompressor.compress(data) {
+                            location.photo = compressed
+                            ThumbnailCache.shared.invalidate(id: location.id)
                         }
                     }
                 }
@@ -453,10 +550,9 @@ private struct BrowseLocationSheets: ViewModifier {
             .sheet(isPresented: $showLibraryPicker) {
                 LibraryPickerView { data in
                     Task {
-                        let image = UIImage(data: data)
-                        let compressed = image.flatMap { ImageCompressor.compress($0) }
-                        await MainActor.run {
-                            if let compressed { location.photo = compressed }
+                        if let compressed = await ImageCompressor.compress(data) {
+                            location.photo = compressed
+                            ThumbnailCache.shared.invalidate(id: location.id)
                         }
                     }
                 }
@@ -500,6 +596,7 @@ private struct BrowseLocationAlerts: ViewModifier {
             .alert("Are you sure?", isPresented: $showCascadeConfirm) {
                 Button("Delete everything", role: .destructive) {
                     if let loc = locationToDelete {
+                        Haptics.write()
                         cascadeDelete(loc)
                         locationToDelete = nil
                     }
@@ -513,6 +610,7 @@ private struct BrowseLocationAlerts: ViewModifier {
                    isPresented: $showEmptyLocationDeleteAlert) {
                 Button("Delete", role: .destructive) {
                     if let loc = locationToDelete {
+                        Haptics.write()
                         modelContext.delete(loc)
                         locationToDelete = nil
                     }
@@ -524,6 +622,7 @@ private struct BrowseLocationAlerts: ViewModifier {
                    isPresented: $showItemDeleteAlert) {
                 Button("Delete", role: .destructive) {
                     if let item = itemToDelete {
+                        Haptics.write()
                         modelContext.delete(item)
                         itemToDelete = nil
                     }

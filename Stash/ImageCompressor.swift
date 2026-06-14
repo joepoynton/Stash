@@ -8,7 +8,20 @@
 import UIKit
 
 enum ImageCompressor {
-    static func compress(_ image: UIImage) -> Data? {
+    /// Decodes and compresses photo `data` entirely off the main thread, then
+    /// returns the compressed JPEG. The previous call sites wrapped this in a
+    /// `Task {}` that inherited the view's MainActor context — so the work ran
+    /// on the main thread and hitched the dismiss animation (P2). The detached
+    /// task here guarantees the heavy decode/scale/encode runs in the
+    /// background; callers hop back to main only to assign the result.
+    nonisolated static func compress(_ data: Data) async -> Data? {
+        await Task.detached(priority: .userInitiated) {
+            guard let image = UIImage(data: data) else { return nil }
+            return compress(image)
+        }.value
+    }
+
+    nonisolated static func compress(_ image: UIImage) -> Data? {
         let maxDimension: CGFloat = 1200
         let size = image.size
         let longestEdge = max(size.width, size.height)

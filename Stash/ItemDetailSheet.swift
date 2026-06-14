@@ -12,6 +12,7 @@ struct ItemDetailSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(RecentlyAccessedStore.self) private var recentStore
     @Environment(StoreKitManager.self) private var storeKit
+    @Environment(NavigationState.self) private var navState
 
     @State private var showMoveSheet = false
     @State private var showPhotoUpgradePrompt = false
@@ -26,14 +27,6 @@ struct ItemDetailSheet: View {
 
     // Quantity tracking
     @State private var showTurnOffQuantityConfirm = false
-    @State private var editingQuantity = false
-    @State private var quantityEntryText = ""
-    @FocusState private var quantityFieldFocused: Bool
-
-    // Minimum quantity editing
-    @State private var editingMinimum = false
-    @State private var minimumEntryText = ""
-    @FocusState private var minimumFieldFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -56,15 +49,29 @@ struct ItemDetailSheet: View {
                         .font(.headline)
                 }
 
-                // Location + Move
+                // Location + Move — tapping the path jumps to the location in Browse
                 Section {
-                    HStack {
-                        Image(systemName: "mappin.and.ellipse")
-                            .foregroundStyle(Color(.secondaryLabel))
-                            .frame(width: 24)
-                        Text(locationPath)
-                            .foregroundStyle(rootAreaColor(for: item.location) ?? Color(.label))
+                    Button {
+                        goToLocation()
+                    } label: {
+                        HStack {
+                            Image(systemName: "mappin.and.ellipse")
+                                .foregroundStyle(Color(.secondaryLabel))
+                                .frame(width: 24)
+                            Text(locationPath)
+                                .foregroundStyle(rootAreaColor(for: item.location) ?? Color(.label))
+                                .multilineTextAlignment(.leading)
+                            Spacer()
+                            if item.location != nil {
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(Color(.tertiaryLabel))
+                            }
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .disabled(item.location == nil)
                     Button {
                         showMoveSheet = true
                     } label: {
@@ -78,6 +85,7 @@ struct ItemDetailSheet: View {
                     Toggle("Out of place", isOn: $item.isOutOfPlace)
                         .tint(.teal)
                         .onChange(of: item.isOutOfPlace) { _, newValue in
+                            Haptics.write()
                             if !newValue { item.outOfPlaceNote = nil }
                         }
                     if item.isOutOfPlace {
@@ -94,14 +102,15 @@ struct ItemDetailSheet: View {
                 // Quantity — toggle always visible; controls expand when tracking is on
                 quantitySection
 
-                // Shopping list — only shown when quantity tracking is on
+                // Restock — only shown when quantity tracking is on
                 if item.quantity != nil {
                     Section {
                         Button {
+                            Haptics.write()
                             item.manuallyRestocking.toggle()
                         } label: {
                             Label(
-                                item.manuallyRestocking ? "Remove from shopping list" : "Add to shopping list",
+                                item.manuallyRestocking ? "Remove from Restock" : "Add to Restock",
                                 systemImage: item.manuallyRestocking ? "cart.badge.minus" : "cart.badge.plus"
                             )
                             .foregroundStyle(item.manuallyRestocking ? Color(.secondaryLabel) : .teal)
@@ -126,8 +135,12 @@ struct ItemDetailSheet: View {
                             displayedComponents: .date
                         )
 
-                        let expiringSoon = (item.expiryDate ?? .distantFuture).timeIntervalSinceNow < 30 * 86400
-                        if expiringSoon {
+                        let timeToExpiry = (item.expiryDate ?? .distantFuture).timeIntervalSinceNow
+                        if timeToExpiry < 0 {
+                            Label("Expired", systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        } else if timeToExpiry < 30 * 86400 {
                             Label("Expires soon", systemImage: "exclamationmark.circle.fill")
                                 .font(.caption)
                                 .foregroundStyle(.orange)
@@ -147,6 +160,7 @@ struct ItemDetailSheet: View {
                         }
                         Spacer()
                         Button("Mark as Verified") {
+                            Haptics.write()
                             item.markAsVerified()
                         }
                         .buttonStyle(.bordered)
@@ -184,21 +198,6 @@ struct ItemDetailSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
-                // Done button above the number pad — only visible when editing quantity
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    if editingQuantity {
-                        Button("Done") { commitQuantityEntry() }
-                    } else if editingMinimum {
-                        Button("Done") { commitMinimumEntry() }
-                    }
-                }
-            }
-            .onChange(of: quantityFieldFocused) { _, isFocused in
-                if !isFocused && editingQuantity { commitQuantityEntry() }
-            }
-            .onChange(of: minimumFieldFocused) { _, isFocused in
-                if !isFocused && editingMinimum { commitMinimumEntry() }
             }
             .sheet(isPresented: $showMoveSheet) {
                 LocationPickerSheet(
@@ -217,10 +216,9 @@ struct ItemDetailSheet: View {
             .fullScreenCover(isPresented: $showCamera) {
                 CameraView { data in
                     Task {
-                        let image = UIImage(data: data)
-                        let compressed = image.flatMap { ImageCompressor.compress($0) }
-                        await MainActor.run {
-                            if let compressed { item.photo = compressed }
+                        if let compressed = await ImageCompressor.compress(data) {
+                            item.photo = compressed
+                            ThumbnailCache.shared.invalidate(id: item.id)
                         }
                     }
                 }
@@ -229,7 +227,10 @@ struct ItemDetailSheet: View {
             .confirmationDialog("Photo", isPresented: $showPhotoActions, titleVisibility: .hidden) {
                 Button("Take Photo") { showCamera = true }
                 Button("Choose from Library") { showLibraryPicker = true }
-                Button("Remove Photo", role: .destructive) { item.photo = nil }
+                Button("Remove Photo", role: .destructive) {
+                    item.photo = nil
+                    ThumbnailCache.shared.invalidate(id: item.id)
+                }
                 Button("Cancel", role: .cancel) {}
             }
             .confirmationDialog("Add Photo", isPresented: $showPhotoSourceOptions, titleVisibility: .hidden) {
@@ -240,10 +241,9 @@ struct ItemDetailSheet: View {
             .sheet(isPresented: $showLibraryPicker) {
                 LibraryPickerView { data in
                     Task {
-                        let image = UIImage(data: data)
-                        let compressed = image.flatMap { ImageCompressor.compress($0) }
-                        await MainActor.run {
-                            if let compressed { item.photo = compressed }
+                        if let compressed = await ImageCompressor.compress(data) {
+                            item.photo = compressed
+                            ThumbnailCache.shared.invalidate(id: item.id)
                         }
                     }
                 }
@@ -254,6 +254,7 @@ struct ItemDetailSheet: View {
             }
             .alert("Delete \"\(item.name)\"?", isPresented: $showDeleteConfirm) {
                 Button("Delete", role: .destructive) {
+                    Haptics.write()
                     modelContext.delete(item)
                     dismiss()
                 }
@@ -283,7 +284,7 @@ struct ItemDetailSheet: View {
             } label: {
                 HStack {
                     Label("On its way", systemImage: "shippingbox.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(StatusColor.onOrder.color)
                         .fontWeight(.medium)
                     Spacer()
                     Text("Arrived?")
@@ -294,6 +295,7 @@ struct ItemDetailSheet: View {
             .buttonStyle(.plain)
             .alert("Mark as arrived?", isPresented: $showMarkArrivedConfirm) {
                 Button("Mark as Arrived") {
+                    Haptics.write()
                     // Count 0: the order status clears; the quantity controls
                     // below are the place to record how many actually arrived.
                     item.markAsArrived(count: 0)
@@ -382,33 +384,17 @@ struct ItemDetailSheet: View {
             .tint(.teal)
 
             if item.quantity != nil {
-                // +  /  tappable number  /  −
-                HStack {
-                    Button {
-                        item.decrementQuantity()
-                    } label: {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle((item.quantity ?? 0) == 0 ? Color(.tertiaryLabel) : .teal)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled((item.quantity ?? 0) == 0)
-
-                    Spacer()
-
-                    quantityDisplay
-
-                    Spacer()
-
-                    Button {
-                        item.incrementQuantity()
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(.teal)
-                    }
-                    .buttonStyle(.plain)
-                }
+                // Current quantity — shared tap-to-type +/- control
+                NumericEntryField(
+                    value: Binding(
+                        get: { item.quantity ?? 0 },
+                        // Route through updateQuantity so lastVerified and the
+                        // auto-clear of a stale on-order flag still fire.
+                        set: { item.updateQuantity(to: $0) }
+                    ),
+                    range: 0...9_999,
+                    unit: item.unit
+                )
                 .padding(.vertical, 4)
 
                 // Unit
@@ -420,48 +406,36 @@ struct ItemDetailSheet: View {
                         .frame(maxWidth: 160)
                 }
 
-                // Minimum
+                // Minimum — compact +/- after the label (0 = no minimum)
                 HStack {
                     Text("Minimum")
                         .foregroundStyle(Color(.label))
-
                     Spacer()
-
-                    Button {
-                        let current = item.minimumQuantity ?? 0
-                        guard current > 0 else { return }
-                        item.minimumQuantity = current - 1 > 0 ? current - 1 : nil
-                    } label: {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle((item.minimumQuantity ?? 0) == 0 ? Color(.tertiaryLabel) : .teal)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled((item.minimumQuantity ?? 0) == 0)
-
-                    minimumDisplay
-
-                    Button {
-                        item.minimumQuantity = (item.minimumQuantity ?? 0) + 1
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(.teal)
-                    }
-                    .buttonStyle(.plain)
+                    NumericEntryField(
+                        value: Binding(
+                            get: { item.minimumQuantity ?? 0 },
+                            set: { item.minimumQuantity = $0 > 0 ? $0 : nil }
+                        ),
+                        range: 0...9_999,
+                        prominent: false
+                    )
                 }
                 .padding(.vertical, 4)
 
-                // Stock status badge
+                // Stock status badge (C1 colours)
                 switch item.orderStatus {
                 case .low:
-                    Label("Low stock", systemImage: "exclamationmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.teal)
+                    StatusBadge(
+                        text: StatusColor.lowStock.label,
+                        color: StatusColor.lowStock.color,
+                        systemImage: "exclamationmark.circle.fill"
+                    )
                 case .onOrder:
-                    Label("On order", systemImage: "shippingbox")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
+                    StatusBadge(
+                        text: StatusColor.onOrder.label,
+                        color: StatusColor.onOrder.color,
+                        systemImage: "shippingbox"
+                    )
                 case .normal:
                     EmptyView()
                 }
@@ -469,82 +443,14 @@ struct ItemDetailSheet: View {
         }
     }
 
-    // The centre of the +/- row. Tapping the number switches to an inline
-    // TextField with a number pad; committing restores the display.
-    @ViewBuilder
-    private var quantityDisplay: some View {
-        if editingQuantity {
-            TextField("0", text: $quantityEntryText)
-                .keyboardType(.numberPad)
-                .multilineTextAlignment(.center)
-                .font(.title.monospacedDigit())
-                .focused($quantityFieldFocused)
-                .frame(minWidth: 60)
-        } else {
-            HStack(alignment: .lastTextBaseline, spacing: 4) {
-                Text("\(item.quantity ?? 0)")
-                    .font(.title.monospacedDigit())
-                    .foregroundStyle(Color(.label))
-                    .underline(color: Color(.tertiaryLabel))   // subtle tap hint
-                if let unit = item.unit, !unit.isEmpty {
-                    Text(unit)
-                        .font(.title3)
-                        .foregroundStyle(Color(.secondaryLabel))
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                quantityEntryText = "\(item.quantity ?? 0)"
-                editingQuantity = true
-                quantityFieldFocused = true
-            }
-        }
-    }
-
-    // The centre of the minimum +/- row. Tappable to enter a value directly.
-    @ViewBuilder
-    private var minimumDisplay: some View {
-        if editingMinimum {
-            TextField("0", text: $minimumEntryText)
-                .keyboardType(.numberPad)
-                .multilineTextAlignment(.center)
-                .font(.title.monospacedDigit())
-                .focused($minimumFieldFocused)
-                .frame(minWidth: 60)
-        } else {
-            Text("\(item.minimumQuantity ?? 0)")
-                .font(.title.monospacedDigit())
-                .foregroundStyle(Color(.label))
-                .underline(color: Color(.tertiaryLabel))
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    minimumEntryText = "\(item.minimumQuantity ?? 0)"
-                    editingMinimum = true
-                    minimumFieldFocused = true
-                }
-        }
-    }
-
     // MARK: - Helpers
 
-    private func commitQuantityEntry() {
-        guard editingQuantity else { return }
-        if let value = Int(quantityEntryText) {
-            item.updateQuantity(to: max(0, value))
-        }
-        editingQuantity = false
-        quantityEntryText = ""
-        quantityFieldFocused = false
-    }
-
-    private func commitMinimumEntry() {
-        guard editingMinimum else { return }
-        if let value = Int(minimumEntryText) {
-            item.minimumQuantity = value > 0 ? value : nil
-        }
-        editingMinimum = false
-        minimumEntryText = ""
-        minimumFieldFocused = false
+    /// Deep-links into the Browse tab at the item's location and closes the sheet.
+    private func goToLocation() {
+        guard let location = item.location else { return }
+        navState.browseNavigationPath = location.ancestorChain
+        navState.selectedTab = 1
+        dismiss()
     }
 
     private var unitBinding: Binding<String> {

@@ -17,6 +17,8 @@ struct BrowseTab: View {
     @Environment(NavigationState.self) private var navState
     @State private var showAddLocation = false
     @State private var locationToEdit: Location? = nil
+    @State private var selectedItem: Item? = nil
+    @State private var searchText = ""
 
     // Delete state
     @State private var locationToDelete: Location? = nil
@@ -31,33 +33,26 @@ struct BrowseTab: View {
     var body: some View {
         @Bindable var bindableNavState = navState
         NavigationStack(path: $bindableNavState.browseNavigationPath) {
-            List {
-                ForEach(rootAreas) { area in
-                    NavigationLink(value: area) {
-                        LocationRow(location: area)
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) { requestDelete(area) }
-                            label: { Label("Delete", systemImage: "trash") }
-                        Button { locationToEdit = area }
-                            label: { Label("Edit", systemImage: "pencil") }
-                            .tint(.teal)
-                    }
+            Group {
+                if !searchText.isEmpty {
+                    SearchResultsView(
+                        searchText: searchText,
+                        onSelectItem: { selectedItem = $0 },
+                        onNavigate: { searchText = "" }
+                    )
+                } else {
+                    rootList
                 }
             }
             .navigationTitle("Browse")
+            .searchable(
+                text: $searchText,
+                placement: .navigationBarDrawer(displayMode: .automatic),
+                prompt: "Search items, spaces, notes…"
+            )
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showAddLocation = true } label: { Image(systemName: "plus") }
-                }
-            }
-            .overlay {
-                if rootAreas.isEmpty {
-                    ContentUnavailableView {
-                        Label("No Spaces Yet", systemImage: "archivebox")
-                    } description: {
-                        Text("Tap + to add your first area.")
-                    }
                 }
             }
             .navigationDestination(for: Location.self) { location in
@@ -67,6 +62,7 @@ struct BrowseTab: View {
         // MARK: Sheets
         .sheet(isPresented: $showAddLocation) { AddLocationSheet(parentLocation: nil) }
         .sheet(item: $locationToEdit)         { LocationDetailSheet(location: $0) }
+        .sheet(item: $selectedItem)           { ItemDetailSheet(item: $0) }
         // MARK: Delete — non-empty
         .confirmationDialog(
             "Delete \"\(locationToDelete?.name ?? "")\"?",
@@ -87,6 +83,7 @@ struct BrowseTab: View {
         .alert("Are you sure?", isPresented: $showCascadeConfirm) {
             Button("Delete everything", role: .destructive) {
                 if let loc = locationToDelete {
+                    Haptics.write()
                     cascadeDelete(loc)
                     locationToDelete = nil
                 }
@@ -100,12 +97,41 @@ struct BrowseTab: View {
                isPresented: $showEmptyDeleteAlert) {
             Button("Delete", role: .destructive) {
                 if let loc = locationToDelete {
+                    Haptics.write()
                     modelContext.delete(loc)
                     locationToDelete = nil
                 }
             }
             Button("Cancel", role: .cancel) {}
         } message: { Text("This cannot be undone.") }
+    }
+
+    // MARK: - Root list
+
+    private var rootList: some View {
+        List {
+            ForEach(rootAreas) { area in
+                NavigationLink(value: area) {
+                    LocationRow(location: area)
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) { requestDelete(area) }
+                        label: { Label("Delete", systemImage: "trash") }
+                    Button { locationToEdit = area }
+                        label: { Label("Edit", systemImage: "pencil") }
+                        .tint(.teal)
+                }
+            }
+        }
+        .overlay {
+            if rootAreas.isEmpty {
+                ContentUnavailableView {
+                    Label("No Spaces Yet", systemImage: "archivebox")
+                } description: {
+                    Text("Tap + to add your first area.")
+                }
+            }
+        }
     }
 
     // MARK: - Helpers

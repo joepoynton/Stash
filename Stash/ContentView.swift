@@ -5,6 +5,7 @@
 
 import SwiftUI
 import SwiftData
+import CloudKit
 
 struct ContentView: View {
     /// Set by StashApp when the CloudKit store failed and we're running local-only.
@@ -13,6 +14,11 @@ struct ContentView: View {
     @State private var navState    = NavigationState()
     @State private var recentStore = RecentlyAccessedStore()
     @State private var syncBannerDismissed = false
+
+    /// F10: true when no iCloud account is signed in. The dismissal is one-time
+    /// (persisted) so the gentle "not backed up" warning never nags.
+    @State private var iCloudNoAccount = false
+    @AppStorage("iCloudNoAccountBannerDismissed") private var noAccountBannerDismissed = false
 
     var body: some View {
         @Bindable var bindableNavState = navState
@@ -32,26 +38,45 @@ struct ContentView: View {
         .environment(recentStore)
         .safeAreaInset(edge: .top) {
             if showSyncUnavailableBanner && !syncBannerDismissed {
-                syncUnavailableBanner
+                syncBanner(
+                    title: "iCloud sync unavailable",
+                    subtitle: "Your items are safe on this device.",
+                    onDismiss: { syncBannerDismissed = true }
+                )
+            } else if iCloudNoAccount && !noAccountBannerDismissed {
+                syncBanner(
+                    title: "Not backed up to iCloud",
+                    subtitle: "Sign in to iCloud in Settings to back up and sync your inventory.",
+                    onDismiss: { noAccountBannerDismissed = true }
+                )
             }
         }
+        .task { await checkICloudAccount() }
     }
 
-    private var syncUnavailableBanner: some View {
+    /// Checks the iCloud account once. Skipped when the CloudKit store already
+    /// failed to open — that case is covered by the other banner.
+    private func checkICloudAccount() async {
+        guard !showSyncUnavailableBanner, !noAccountBannerDismissed else { return }
+        let status = try? await CKContainer.default().accountStatus()
+        iCloudNoAccount = (status == .noAccount)
+    }
+
+    private func syncBanner(title: String, subtitle: String, onDismiss: @escaping () -> Void) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "icloud.slash")
                 .foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 1) {
-                Text("iCloud sync unavailable")
+                Text(title)
                     .font(.subheadline)
                     .fontWeight(.medium)
-                Text("Your items are safe on this device.")
+                Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(Color(.secondaryLabel))
             }
             Spacer()
             Button {
-                withAnimation { syncBannerDismissed = true }
+                withAnimation { onDismiss() }
             } label: {
                 Image(systemName: "xmark")
                     .font(.caption.bold())

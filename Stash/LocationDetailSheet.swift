@@ -23,12 +23,6 @@ struct LocationDetailSheet: View {
     @State private var showLibraryPicker = false
     @State private var showPhotoSourceOptions = false
 
-    static let areaColors: [(name: String, hex: String)] = [
-        ("Teal",   "#2A9D8F"), ("Blue",   "#3A86FF"), ("Purple", "#8338EC"),
-        ("Pink",   "#FF006E"), ("Orange", "#FB5607"), ("Yellow", "#FFBE0B"),
-        ("Green",  "#06D6A0"), ("Red",    "#E63946")
-    ]
-
     var body: some View {
         NavigationStack {
             formContent
@@ -64,10 +58,9 @@ struct LocationDetailSheet: View {
             .fullScreenCover(isPresented: $showCamera) {
                 CameraView { data in
                     Task {
-                        let image = UIImage(data: data)
-                        let compressed = image.flatMap { ImageCompressor.compress($0) }
-                        await MainActor.run {
-                            if let compressed { location.photo = compressed }
+                        if let compressed = await ImageCompressor.compress(data) {
+                            location.photo = compressed
+                            ThumbnailCache.shared.invalidate(id: location.id)
                         }
                     }
                 }
@@ -81,10 +74,9 @@ struct LocationDetailSheet: View {
             .sheet(isPresented: $showLibraryPicker) {
                 LibraryPickerView { data in
                     Task {
-                        let image = UIImage(data: data)
-                        let compressed = image.flatMap { ImageCompressor.compress($0) }
-                        await MainActor.run {
-                            if let compressed { location.photo = compressed }
+                        if let compressed = await ImageCompressor.compress(data) {
+                            location.photo = compressed
+                            ThumbnailCache.shared.invalidate(id: location.id)
                         }
                     }
                 }
@@ -106,6 +98,7 @@ struct LocationDetailSheet: View {
             }
             .alert("Are you sure?", isPresented: $showCascadeConfirm) {
                 Button("Delete everything", role: .destructive) {
+                    Haptics.write()
                     cascadeDelete(location)
                     dismiss()
                 }
@@ -115,6 +108,7 @@ struct LocationDetailSheet: View {
             }
             .alert("Delete \"\(location.name)\"?", isPresented: $showEmptyDeleteConfirm) {
                 Button("Delete", role: .destructive) {
+                    Haptics.write()
                     modelContext.delete(location)
                     dismiss()
                 }
@@ -173,6 +167,7 @@ struct LocationDetailSheet: View {
                     }
                     Button("Remove Photo", role: .destructive) {
                         location.photo = nil
+                        ThumbnailCache.shared.invalidate(id: location.id)
                     }
                 } else {
                     Button {
@@ -243,7 +238,7 @@ struct LocationDetailSheet: View {
             }
             .buttonStyle(.plain)
 
-            ForEach(Self.areaColors, id: \.hex) { swatch in
+            ForEach(AreaPalette.colors, id: \.hex) { swatch in
                 Button {
                     location.color = swatch.hex
                 } label: {

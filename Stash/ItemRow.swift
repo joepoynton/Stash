@@ -41,15 +41,18 @@ struct ItemRow: View {
         .contentShape(Rectangle())
     }
 
-    @ViewBuilder
     private var thumbnailView: some View {
-        if let data = item.photo, let uiImage = UIImage(data: data) {
-            Image(uiImage: uiImage)
+        CachedThumbnail(
+            id: item.id,
+            size: CGSize(width: 44, height: 44),
+            dataProvider: { item.photo }
+        ) { image in
+            image
                 .resizable()
                 .scaledToFill()
                 .frame(width: 44, height: 44)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
-        } else {
+        } placeholder: {
             RoundedRectangle(cornerRadius: 6)
                 .fill(Color(.systemGray5))
                 .frame(width: 44, height: 44)

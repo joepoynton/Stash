@@ -59,7 +59,7 @@ struct RestockTab: View {
                                     .tint(.teal)
                                 } else {
                                     Button("Mark as Ordered") {
-                                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                        Haptics.write()
                                         item.markAsOrdered()
                                     }
                                     .tint(.teal)
@@ -139,13 +139,13 @@ private struct AreaSectionHeader: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            if let icon = area?.icon {
-                LocationIconView(icon: icon, font: .caption, color: areaColor)
-            }
-            Text(area?.name ?? "Unknown")
-                .foregroundStyle(areaColor)
-        }
+        // Shared header (level .secondary) carrying the area's colour + icon.
+        SectionHeader(
+            title: area?.name ?? "Unknown",
+            level: .secondary,
+            icon: area?.icon,
+            tint: areaColor
+        )
     }
 }
 
@@ -185,26 +185,18 @@ private struct RestockRow: View {
     @ViewBuilder
     private var statusBadge: some View {
         if item.manuallyRestocking && item.orderStatus != .onOrder {
-            Text("Wanted")
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundStyle(.teal)
+            // Manual flag — neutral annotation, not a stock alarm (C2 wording).
+            StatusBadge(text: "Added manually", color: Color(.secondaryLabel))
         } else {
             switch item.orderStatus {
             case .onOrder:
-                HStack(spacing: 3) {
-                    Image(systemName: "shippingbox")
-                        .font(.caption2)
-                    Text("On Order")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                }
-                .foregroundStyle(.teal)
+                StatusBadge(
+                    text: StatusColor.onOrder.label,
+                    color: StatusColor.onOrder.color,
+                    systemImage: "shippingbox"
+                )
             default:
-                Text("Low")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.orange)
+                StatusBadge(text: "Low", color: StatusColor.lowStock.color)
             }
         }
     }
@@ -221,7 +213,10 @@ private struct ArrivalSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Stepper("Arrived: \(arrivedCount)", value: $arrivedCount, in: 1...999)
+                    // Direct numeric entry — orders are often 12 or 24, which a
+                    // bare Stepper made tediously slow to reach (C4).
+                    NumericEntryField(value: $arrivedCount, range: 1...999)
+                        .padding(.vertical, 4)
                 } header: {
                     Text("How many arrived?")
                 } footer: {
@@ -243,7 +238,7 @@ private struct ArrivalSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Confirm") {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        Haptics.write()
                         item.markAsArrived(count: arrivedCount)
                         dismiss()
                     }
@@ -261,42 +256,12 @@ private struct AdjustMinimumSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var minimum: Int = 1
 
-    @State private var editingMinimum = false
-    @State private var minimumEntryText = ""
-    @FocusState private var minimumFieldFocused: Bool
-
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    HStack {
-                        Button {
-                            guard minimum > 1 else { return }
-                            minimum -= 1
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .font(.title2)
-                                .foregroundStyle(minimum <= 1 ? Color(.tertiaryLabel) : .teal)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(minimum <= 1)
-
-                        Spacer()
-
-                        minimumDisplay
-
-                        Spacer()
-
-                        Button {
-                            minimum += 1
-                        } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.title2)
-                                .foregroundStyle(.teal)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.vertical, 4)
+                    NumericEntryField(value: $minimum, range: 1...9_999)
+                        .padding(.vertical, 4)
                 } footer: {
                     if let qty = item.quantity {
                         if qty < minimum {
@@ -315,57 +280,16 @@ private struct AdjustMinimumSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        Haptics.write()
                         item.minimumQuantity = minimum
                         dismiss()
                     }
                 }
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    if editingMinimum {
-                        Button("Done") { commitMinimumEntry() }
-                    }
-                }
-            }
-            .onChange(of: minimumFieldFocused) { _, isFocused in
-                if !isFocused && editingMinimum { commitMinimumEntry() }
             }
         }
         .presentationDetents([.medium])
         .onAppear {
             minimum = item.minimumQuantity ?? 1
         }
-    }
-
-    @ViewBuilder
-    private var minimumDisplay: some View {
-        if editingMinimum {
-            TextField("1", text: $minimumEntryText)
-                .keyboardType(.numberPad)
-                .multilineTextAlignment(.center)
-                .font(.title.monospacedDigit())
-                .focused($minimumFieldFocused)
-                .frame(minWidth: 60)
-        } else {
-            Text("\(minimum)")
-                .font(.title.monospacedDigit())
-                .foregroundStyle(Color(.label))
-                .underline(color: Color(.tertiaryLabel))
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    minimumEntryText = "\(minimum)"
-                    editingMinimum = true
-                    minimumFieldFocused = true
-                }
-        }
-    }
-
-    private func commitMinimumEntry() {
-        guard editingMinimum else { return }
-        if let value = Int(minimumEntryText), value >= 1 {
-            minimum = value
-        }
-        editingMinimum = false
-        minimumEntryText = ""
-        minimumFieldFocused = false
     }
 }

@@ -27,12 +27,6 @@ struct AddLocationSheet: View {
 
     private var isRoot: Bool { parentLocation == nil }
 
-    static let areaColors: [(name: String, hex: String)] = [
-        ("Teal",   "#2A9D8F"), ("Blue",   "#3A86FF"), ("Purple", "#8338EC"),
-        ("Pink",   "#FF006E"), ("Orange", "#FB5607"), ("Yellow", "#FFBE0B"),
-        ("Green",  "#06D6A0"), ("Red",    "#E63946")
-    ]
-
     var body: some View {
         NavigationStack {
             Form {
@@ -79,10 +73,8 @@ struct AddLocationSheet: View {
             .fullScreenCover(isPresented: $showCamera) {
                 CameraView { data in
                     Task {
-                        let image = UIImage(data: data)
-                        let compressed = image.flatMap { ImageCompressor.compress($0) }
-                        await MainActor.run {
-                            if let compressed { photoData = compressed }
+                        if let compressed = await ImageCompressor.compress(data) {
+                            photoData = compressed
                         }
                     }
                 }
@@ -96,10 +88,8 @@ struct AddLocationSheet: View {
             .sheet(isPresented: $showLibraryPicker) {
                 LibraryPickerView { data in
                     Task {
-                        let image = UIImage(data: data)
-                        let compressed = image.flatMap { ImageCompressor.compress($0) }
-                        await MainActor.run {
-                            if let compressed { photoData = compressed }
+                        if let compressed = await ImageCompressor.compress(data) {
+                            photoData = compressed
                         }
                     }
                 }
@@ -233,7 +223,7 @@ struct AddLocationSheet: View {
             }
             .buttonStyle(.plain)
 
-            ForEach(Self.areaColors, id: \.hex) { swatch in
+            ForEach(AreaPalette.colors, id: \.hex) { swatch in
                 Button {
                     selectedColorHex = swatch.hex
                 } label: {
