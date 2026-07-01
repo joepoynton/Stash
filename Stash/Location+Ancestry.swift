@@ -43,6 +43,20 @@ extension Location {
     var rootAncestor: Location {
         ancestorChain.first ?? self
     }
+
+    /// This location's id plus every descendant id. Cycle-safe (a visited-set
+    /// bounds a corrupted parent/child cycle). Used to exclude a whole subtree
+    /// from a "Move to…" destination picker so a space can't be moved inside
+    /// itself or any of its own descendants.
+    var selfAndDescendantIDs: Set<UUID> {
+        var ids = Set<UUID>()
+        var stack: [Location] = [self]
+        while let loc = stack.popLast() {
+            guard ids.insert(loc.id).inserted else { continue }
+            stack.append(contentsOf: loc.childList)
+        }
+        return ids
+    }
 }
 
 // MARK: - Cycle repair

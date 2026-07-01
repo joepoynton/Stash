@@ -375,7 +375,9 @@ struct SettingsView: View {
             // D6: round-trip the previously-omitted state.
             item.isOutOfPlace = importedItem.isOutOfPlace ?? false
             item.outOfPlaceNote = importedItem.outOfPlaceNote
-            item.neverStale = importedItem.neverStale ?? false
+            // New items default to 'always verified'; honour an explicit value
+            // from a Stash export, otherwise default to true.
+            item.neverStale = importedItem.neverStale ?? true
             item.manuallyRestocking = importedItem.manuallyRestocking ?? false
             if let dateAdded = importedItem.dateAdded { item.dateAdded = dateAdded }
             if let lastVerified = importedItem.lastVerified { item.lastVerified = lastVerified }

@@ -261,15 +261,7 @@ struct LocationDetailSheet: View {
     // MARK: - Helpers
 
     private var selfAndDescendantIDs: Set<UUID> {
-        var ids = Set<UUID>()
-        collectIDs(of: location, into: &ids)
-        return ids
-    }
-
-    private func collectIDs(of loc: Location, into ids: inout Set<UUID>) {
-        // insert(_:).inserted doubles as a cycle guard for corrupted trees.
-        guard ids.insert(loc.id).inserted else { return }
-        for child in loc.childList { collectIDs(of: child, into: &ids) }
+        location.selfAndDescendantIDs
     }
 
     private func cascadeDelete(_ loc: Location) {

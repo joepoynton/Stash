@@ -132,7 +132,12 @@ struct AddItemSheet: View {
             return false
         }
 
-        let item = Item(name: trimmed, location: location)
+        // Insert first, then set the location so SwiftData maintains the
+        // inverse `location.items` array in memory immediately (see QuickAdd).
+        let item = Item(name: trimmed)
+        modelContext.insert(item)
+        item.location = location
+        item.neverStale = true   // New items are 'always verified' by default (opt-in staleness).
         item.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil
                      : notes.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -144,7 +149,6 @@ struct AddItemSheet: View {
         }
 
         item.expiryDate = hasExpiryDate ? expiryDate : nil
-        modelContext.insert(item)
         UserDefaults.standard.set(location.id.uuidString, forKey: "lastUsedLocationID")
         return true
     }

@@ -5,8 +5,8 @@
 //  One screen in the Browse navigation stack. Shows child Locations ("Spaces")
 //  and Items for the given location, with a tappable breadcrumb in the toolbar.
 //
-//  "+" is the fast path: a single tap opens Quick Add; the full menu
-//  (Add Space, Add Item, Add Photo, Reorder) sits behind a long-press.
+//  A single tap on "+" opens the full menu (Add Space, Add Item, Quick Add,
+//  Add Photo, Reorder) — no action is hidden behind a long-press.
 //
 
 import SwiftUI
@@ -203,7 +203,9 @@ struct BrowseLocationView: View {
 
     // MARK: - Toolbar menus
 
-    /// Tap = Quick Add (the highest-frequency action); long-press = full menu.
+    /// A single tap opens the full menu — building structure (Add Space) is as
+    /// common as single-item entry, so nothing is hidden behind a long-press.
+    /// Quick Add is one clearly labelled option, not the default.
     private var addMenu: some View {
         Menu {
             Button { activeSheet = .addLocation } label: {
@@ -211,6 +213,9 @@ struct BrowseLocationView: View {
             }
             Button { presentAddItem() } label: {
                 Label("Add Item", systemImage: "plus.square")
+            }
+            Button { presentQuickAdd() } label: {
+                Label("Quick Add", systemImage: "bolt.fill")
             }
             Button {
                 if storeKit.isPro {
@@ -233,8 +238,6 @@ struct BrowseLocationView: View {
             }
         } label: {
             Image(systemName: "plus")
-        } primaryAction: {
-            presentQuickAdd()
         }
     }
 
@@ -321,6 +324,24 @@ struct BrowseLocationView: View {
         ForEach(children) { child in
             NavigationLink(value: child) {
                 LocationRow(location: child)
+            }
+            .contextMenu {
+                Button { activeSheet = .locationMove(child) } label: {
+                    Label("Move to…", systemImage: "arrow.up.arrow.down")
+                }
+                Button { activeSheet = .locationEdit(child) } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+                Button(role: .destructive) { requestDeleteLocation(child) } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+            // Move the whole space (and everything inside it) — leading swipe,
+            // mirroring the out-of-place leading swipe on items.
+            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                Button { activeSheet = .locationMove(child) }
+                    label: { Label("Move", systemImage: "arrow.up.arrow.down") }
+                    .tint(.indigo)
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 Button(role: .destructive) { requestDeleteLocation(child) }
@@ -450,6 +471,7 @@ private enum BrowseSheet: Identifiable, Equatable {
     case quickAdd
     case itemDetail(Item)
     case itemMove(Item)
+    case locationMove(Location)
     case locationEdit(Location)
     case locationPhotoOptions
     case photosPicker
@@ -461,6 +483,7 @@ private enum BrowseSheet: Identifiable, Equatable {
         case .quickAdd:                  return "quickAdd"
         case .itemDetail(let item):      return "itemDetail-\(item.id)"
         case .itemMove(let item):        return "itemMove-\(item.id)"
+        case .locationMove(let loc):     return "locationMove-\(loc.id)"
         case .locationEdit(let loc):     return "locationEdit-\(loc.id)"
         case .locationPhotoOptions:      return "locationPhotoOptions"
         case .photosPicker:              return "photosPicker"
@@ -518,6 +541,20 @@ private struct BrowseLocationSheets: ViewModifier {
                                 item.location = loc
                                 item.lastVerified = Date()
                             }
+                        }
+                    )
+                case .locationMove(let loc):
+                    LocationPickerSheet(
+                        title: "Move to…",
+                        excludedIDs: loc.selfAndDescendantIDs,
+                        allowTopLevel: true,
+                        expandedIDs: $pickerExpandedIDs,
+                        onSelect: { newParent in
+                            // The picker already excludes the subtree; this is a
+                            // belt-and-suspenders cycle guard. Reparenting moves
+                            // the whole subtree (children + items stay attached).
+                            if let newParent, loc.selfAndDescendantIDs.contains(newParent.id) { return }
+                            loc.parent = newParent
                         }
                     )
                 case .locationEdit(let loc): LocationDetailSheet(location: loc)

@@ -155,8 +155,15 @@ struct QuickAddSheet: View {
             showUpgradePrompt = true
             return
         }
-        let item = Item(name: trimmed, location: location)
+        // Insert first, then wire up the relationship. Setting `location` on an
+        // Item that isn't yet in the context doesn't reliably populate the
+        // inverse `location.items` array in memory, so the new item wouldn't
+        // appear in the Browse list until the next save/refetch. Inserting
+        // first makes SwiftData maintain both sides immediately.
+        let item = Item(name: trimmed)
         modelContext.insert(item)
+        item.location = location
+        item.neverStale = true   // New items are 'always verified' by default (opt-in staleness).
         lastUsedLocationID = location.id.uuidString
         addedItems.insert(item, at: 0)   // newest at top
         name = ""
