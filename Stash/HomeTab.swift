@@ -92,6 +92,8 @@ struct HomeTab: View {
                 return (item, .lowStock)
             }
             if let expiry = item.expiryDate {
+                // Shared Item helpers (also used by ExpiringItemsIntent) keep
+                // Siri's "expiring soon" in lockstep with this section.
                 if expiry <= now {
                     return (item, .expired)
                 }

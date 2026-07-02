@@ -20,6 +20,9 @@ struct BrowseTab: View {
     @State private var selectedItem: Item? = nil
     @State private var searchText = ""
 
+    // Reorder mode for the root Areas list.
+    @State private var editMode: EditMode = .inactive
+
     // Delete state
     @State private var locationToDelete: Location? = nil
     @State private var showDeleteActionSheet = false
@@ -28,6 +31,20 @@ struct BrowseTab: View {
 
     private var rootAreas: [Location] {
         allLocations.filter { $0.parent == nil }
+    }
+
+    /// Root Areas in display order: manual `sortOrder` once the user has
+    /// reordered, otherwise creation order (the @Query's dateCreated sort),
+    /// which also acts as the tiebreaker for not-yet-ordered Areas.
+    private var sortedRootAreas: [Location] {
+        let list = rootAreas
+        guard list.contains(where: { $0.sortOrder > 0 }) else { return list }
+        return list.sorted { a, b in
+            if a.sortOrder == 0 && b.sortOrder == 0 { return a.dateCreated < b.dateCreated }
+            if a.sortOrder == 0 { return false }
+            if b.sortOrder == 0 { return true }
+            return a.sortOrder < b.sortOrder
+        }
     }
 
     var body: some View {
@@ -52,13 +69,22 @@ struct BrowseTab: View {
             )
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { showAddLocation = true } label: { Image(systemName: "plus") }
+                    if editMode.isEditing {
+                        Button("Done") { withAnimation { editMode = .inactive } }
+                    } else {
+                        addMenu
+                    }
                 }
             }
             .navigationDestination(for: Location.self) { location in
                 BrowseLocationView(location: location, navigationPath: $bindableNavState.browseNavigationPath)
             }
         }
+        // MARK: Intent search handoff (SearchStashIntent)
+        // "Search Stash for…" posts the query to IntentRouter; ContentView
+        // switches to this tab and we run it in the root search field.
+        .onChange(of: IntentRouter.shared.pendingSearchText) { consumePendingIntentSearch() }
+        .onAppear { consumePendingIntentSearch() }
         // MARK: Sheets
         .sheet(isPresented: $showAddLocation) { AddLocationSheet(parentLocation: nil) }
         .sheet(item: $locationToEdit)         { LocationDetailSheet(location: $0) }
@@ -106,11 +132,30 @@ struct BrowseTab: View {
         } message: { Text("This cannot be undone.") }
     }
 
+    // MARK: - Toolbar menu
+
+    /// A single tap opens the menu. Only Add Space and Reorder Spaces make
+    /// sense at the root — Quick Add, Add Item and Add Photo are location-only.
+    private var addMenu: some View {
+        Menu {
+            Button { showAddLocation = true } label: {
+                Label("Add Space", systemImage: "folder.badge.plus")
+            }
+            if rootAreas.count > 1 {
+                Button { withAnimation { editMode = .active } } label: {
+                    Label("Reorder Spaces", systemImage: "arrow.up.arrow.down")
+                }
+            }
+        } label: {
+            Image(systemName: "plus")
+        }
+    }
+
     // MARK: - Root list
 
     private var rootList: some View {
         List {
-            ForEach(rootAreas) { area in
+            ForEach(sortedRootAreas) { area in
                 NavigationLink(value: area) {
                     LocationRow(location: area)
                 }
@@ -122,7 +167,15 @@ struct BrowseTab: View {
                         .tint(.teal)
                 }
             }
+            .onMove { indices, destination in
+                var ordered = sortedRootAreas
+                ordered.move(fromOffsets: indices, toOffset: destination)
+                for (index, area) in ordered.enumerated() {
+                    area.sortOrder = index + 1
+                }
+            }
         }
+        .environment(\.editMode, $editMode)
         .overlay {
             if rootAreas.isEmpty {
                 ContentUnavailableView {
@@ -135,6 +188,15 @@ struct BrowseTab: View {
     }
 
     // MARK: - Helpers
+
+    /// Runs a search handed over from SearchStashIntent, popping back to the
+    /// Browse root first so the results appear in the root search field.
+    private func consumePendingIntentSearch() {
+        guard let text = IntentRouter.shared.pendingSearchText else { return }
+        IntentRouter.shared.pendingSearchText = nil
+        navState.browseNavigationPath = []
+        searchText = text
+    }
 
     private func requestDelete(_ location: Location) {
         locationToDelete = location

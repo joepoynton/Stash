@@ -75,6 +75,10 @@ enum SpotlightIndexer {
             try await index.indexAppEntities(items)
             try await index.indexAppEntities(locations)
 
+            // Keep Siri's phrase-parameter vocabulary ("where is my <item>")
+            // in step with the inventory. Piggybacks on the same debounce.
+            StashShortcuts.updateAppShortcutParameters()
+
             logger.info("Spotlight reindex complete: \(items.count) items, \(locations.count) spaces.")
         } catch {
             logger.error("Spotlight reindex failed: \(error, privacy: .public)")

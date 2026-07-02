@@ -83,11 +83,9 @@ struct RestockTab: View {
     // MARK: - Data
 
     private var restockItems: [Item] {
-        allItems.filter { item in
-            if item.manuallyRestocking { return true }
-            guard let qty = item.quantity, let min = item.minimumQuantity else { return false }
-            return qty < min
-        }
+        // Item.needsRestock is the shared definition, also used by the
+        // RestockListIntent so Siri's list always matches this tab.
+        allItems.filter(\.needsRestock)
     }
 
     private var groupedByArea: [AreaGroup] {

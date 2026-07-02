@@ -3,9 +3,9 @@
 //  Stash
 //
 //  "How many <item> do I have" — totals stock for an item across every
-//  location it lives in. Takes a free string rather than a single ItemEntity
-//  precisely because the answer should sum duplicates rather than make the user
-//  pick one location.
+//  location it lives in. Resolves to a ProductEntity (deduped by name) rather
+//  than a single ItemEntity precisely because the answer should sum duplicates
+//  rather than make the user pick one location.
 //
 
 import Foundation
@@ -23,7 +23,7 @@ struct CheckStockIntent: AppIntent {
     /// A product (an item across all its locations). Backed by ProductEntityQuery,
     /// which dedupes by name, so this resolves straight to one product to total
     /// rather than asking the user to pick a location.
-    @Parameter(title: "Item")
+    @Parameter(title: "Item", requestValueDialog: "Which item do you want to check?")
     var product: ProductEntity
 
     static var parameterSummary: some ParameterSummary {
@@ -38,10 +38,8 @@ struct CheckStockIntent: AppIntent {
             return .result(dialog: IntentDialog("I couldn't find \(product.name) in Stash."))
         }
 
-        let tracked = matches.filter { $0.quantity != nil }
-
         // Items exist but none have quantity tracking switched on.
-        guard !tracked.isEmpty else {
+        guard let totalPhrase = IntentFormatting.totalStockPhrase(for: matches) else {
             let places = distinctLocationCount(matches)
             let placePhrase = places > 1 ? " in \(places) places" : ""
             return .result(dialog: IntentDialog(
@@ -49,44 +47,24 @@ struct CheckStockIntent: AppIntent {
             ))
         }
 
-        // Sum quantities, grouped by unit (units are free text, so a user could
-        // have "6 cans" in one place and "2 boxes" in another).
-        var groupOrder: [String] = []
-        var groups: [String: (unit: String?, total: Int)] = [:]
-        for item in tracked {
-            let quantity = item.quantity ?? 0
-            let key = (item.unit?.trimmingCharacters(in: .whitespaces).lowercased()) ?? ""
-            if let existing = groups[key] {
-                groups[key] = (existing.unit, existing.total + quantity)
-            } else {
-                groups[key] = (item.unit, quantity)
-                groupOrder.append(key)
-            }
-        }
-
-        let phrases = groupOrder.compactMap { groups[$0] }
-            .map { IntentFormatting.quantityPhrase($0.total, unit: $0.unit) }
-        let totalPhrase = Self.joinWithAnd(phrases)
-
+        let tracked = matches.filter { $0.quantity != nil }
         let places = distinctLocationCount(tracked)
-        let placePhrase = places > 1 ? " across \(places) places" : ""
+
+        // Name the place when there's exactly one; otherwise give the count so
+        // the natural follow-up ("find my …") is obvious.
+        let placePhrase: String
+        if places == 1, let path = tracked.first?.location?.pathString {
+            placePhrase = ", in \(path)"
+        } else if places > 1 {
+            placePhrase = " across \(places) places"
+        } else {
+            placePhrase = ""
+        }
 
         return .result(dialog: IntentDialog("You have \(totalPhrase)\(placePhrase)."))
     }
 
     private func distinctLocationCount(_ items: [Item]) -> Int {
         Set(items.compactMap { $0.location?.id }).count
-    }
-
-    /// "a", "a and b", "a, b and c".
-    static func joinWithAnd(_ phrases: [String]) -> String {
-        switch phrases.count {
-        case 0: return ""
-        case 1: return phrases[0]
-        case 2: return "\(phrases[0]) and \(phrases[1])"
-        default:
-            let head = phrases.dropLast().joined(separator: ", ")
-            return "\(head) and \(phrases.last ?? "")"
-        }
     }
 }

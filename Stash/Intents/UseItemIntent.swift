@@ -22,10 +22,10 @@ struct UseItemIntent: AppIntent {
         categoryName: "Stash"
     )
 
-    @Parameter(title: "Item")
+    @Parameter(title: "Item", requestValueDialog: "Which item did you use?")
     var item: ItemEntity
 
-    @Parameter(title: "Number Used", default: 1)
+    @Parameter(title: "Number Used", default: 1, inclusiveRange: (1, 9_999))
     var count: Int
 
     static var parameterSummary: some ParameterSummary {

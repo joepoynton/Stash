@@ -28,16 +28,38 @@ struct ProductEntity: AppEntity {
     /// Normalised name (trimmed + lowercased) — the product's stable key.
     let id: String
 
+    /// Total tracked stock across every location, e.g. "6 cans and 2 boxes".
+    /// Nil when quantity tracking is off everywhere.
+    var stockSummary: String?
+
+    /// How many distinct locations hold this product.
+    var locationCount: Int
+
     @Property(title: "Name")
     var name: String
 
-    init(id: String, name: String) {
+    init(id: String, name: String, stockSummary: String? = nil, locationCount: Int = 0) {
         self.id = id
+        self.stockSummary = stockSummary
+        self.locationCount = locationCount
         self.name = name
     }
 
     var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(title: "\(name)")
+        var parts: [String] = []
+        if let stockSummary {
+            parts.append(stockSummary)
+        }
+        if locationCount > 1 {
+            parts.append("in \(locationCount) places")
+        }
+        guard !parts.isEmpty else {
+            return DisplayRepresentation(title: "\(name)")
+        }
+        return DisplayRepresentation(
+            title: "\(name)",
+            subtitle: "\(parts.joined(separator: " · "))"
+        )
     }
 }
 
@@ -51,11 +73,17 @@ struct ProductEntityQuery: EntityStringQuery {
         return distinctProducts().filter { wanted.contains($0.id) }
     }
 
+    /// Fuzzy stem matching so "batteries" resolves the "AA Battery" product
+    /// and vice versa — the single most common miss for spoken stock checks.
     @MainActor
     func entities(matching string: String) async throws -> [ProductEntity] {
         let query = string.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return [] }
-        return distinctProducts().filter { $0.name.localizedStandardContains(query) }
+        return IntentMatching.rankedMatches(
+            query: query,
+            candidates: distinctProducts(),
+            name: { $0.name }
+        )
     }
 
     @MainActor
@@ -64,17 +92,28 @@ struct ProductEntityQuery: EntityStringQuery {
     }
 
     /// One ProductEntity per distinct item name in the store, keyed by the
-    /// normalised name and labelled with the first spelling encountered.
+    /// normalised name, labelled with the first spelling encountered, and
+    /// carrying its cross-location totals for the disambiguation subtitle.
     @MainActor
     private func distinctProducts() -> [ProductEntity] {
-        var displayNameByKey: [String: String] = [:]
+        var itemsByKey: [String: [Item]] = [:]
+        var keyOrder: [String] = []
         for item in IntentStore.allItems() {
             let key = ProductEntity.normalise(item.name)
             guard !key.isEmpty else { continue }
-            if displayNameByKey[key] == nil { displayNameByKey[key] = item.name }
+            if itemsByKey[key] == nil { keyOrder.append(key) }
+            itemsByKey[key, default: []].append(item)
         }
-        return displayNameByKey
-            .map { ProductEntity(id: $0.key, name: $0.value) }
+        return keyOrder
+            .compactMap { key -> ProductEntity? in
+                guard let items = itemsByKey[key], let first = items.first else { return nil }
+                return ProductEntity(
+                    id: key,
+                    name: first.name,
+                    stockSummary: IntentFormatting.totalStockPhrase(for: items),
+                    locationCount: Set(items.compactMap { $0.location?.id }).count
+                )
+            }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 }

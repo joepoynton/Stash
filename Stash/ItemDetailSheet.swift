@@ -189,6 +189,9 @@ struct ItemDetailSheet: View {
                 }
             }
             .scrollDismissesKeyboard(.interactively)
+            // iOS 27 View Annotations seam: this sheet *is* the item, so
+            // "move this to the loft" / "I've used two of these" resolve here.
+            .stashItemContext(item)
             .navigationTitle(item.name)
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {

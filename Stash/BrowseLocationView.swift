@@ -150,6 +150,9 @@ struct BrowseLocationView: View {
             placement: .navigationBarDrawer(displayMode: .automatic),
             prompt: "Search items, spaces, notes…"
         )
+        // iOS 27 View Annotations seam: this screen shows the location's
+        // contents, so "what's in here" resolves to it.
+        .stashLocationContext(location)
         .tint(areaTint)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -368,6 +371,8 @@ struct BrowseLocationView: View {
                 ItemRow(item: item)
             }
             .buttonStyle(.plain)
+            // iOS 27 View Annotations seam: each row maps to its item.
+            .stashItemContext(item)
             .contextMenu {
                 ItemContextMenuContent(
                     item: item,

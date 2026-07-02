@@ -4,11 +4,18 @@
 //
 //  "Where is my <item>" — the flagship intent. Resolves a spoken / typed item
 //  name to an ItemEntity and answers with its location and stock in a single
-//  spoken sentence.
+//  spoken sentence, plus a visual card (photo + breadcrumb) as the snippet.
+//
+//  Disambiguation across locations is automatic: when the spoken name matches
+//  the same product in several places, ItemEntityQuery returns all of them and
+//  the system asks the user to choose — each option shows its breadcrumb
+//  subtitle and photo (see ItemEntity.displayRepresentation).
 //
 
 import Foundation
 import AppIntents
+// Required for .result(value:dialog:view:) — see note in RestockListIntent.
+import SwiftUI
 
 struct FindItemIntent: AppIntent {
 
@@ -21,7 +28,7 @@ struct FindItemIntent: AppIntent {
 
     /// The item to locate. Backed by ItemEntityQuery, so the system resolves the
     /// spoken name to an item (asking the user to choose if several match).
-    @Parameter(title: "Item")
+    @Parameter(title: "Item", requestValueDialog: "Which item are you looking for?")
     var item: ItemEntity
 
     static var parameterSummary: some ParameterSummary {
@@ -29,19 +36,24 @@ struct FindItemIntent: AppIntent {
     }
 
     @MainActor
-    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<ItemEntity> {
+    func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView & ReturnsValue<ItemEntity> {
         // Re-read live data: the item may have moved or changed since it was
         // resolved, and it may even have been deleted.
         guard let live = IntentStore.item(id: item.id) else {
             let name = item.name
             return .result(
                 value: item,
-                dialog: IntentDialog("I can't find \(name) in Stash anymore.")
+                dialog: IntentDialog("I can't find \(name) in Stash anymore."),
+                view: ItemCardSnippetView(item: item)
             )
         }
 
         let entity = ItemEntity(item: live)
-        return .result(value: entity, dialog: IntentDialog("\(Self.locationDialog(for: live))"))
+        return .result(
+            value: entity,
+            dialog: IntentDialog("\(Self.locationDialog(for: live))"),
+            view: ItemCardSnippetView(item: entity)
+        )
     }
 
     /// Builds the natural answer, e.g.

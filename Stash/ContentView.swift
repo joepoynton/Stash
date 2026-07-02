@@ -6,6 +6,7 @@
 import SwiftUI
 import SwiftData
 import CloudKit
+import CoreSpotlight
 
 struct ContentView: View {
     /// Set by StashApp when the CloudKit store failed and we're running local-only.
@@ -14,6 +15,10 @@ struct ContentView: View {
     @State private var navState    = NavigationState()
     @State private var recentStore = RecentlyAccessedStore()
     @State private var syncBannerDismissed = false
+
+    /// Item presented by an intent (OpenItemIntent, Spotlight tap-through).
+    /// Presented as a root-level sheet so it works from any tab.
+    @State private var intentItem: Item? = nil
 
     /// F10: true when no iCloud account is signed in. The dismissal is one-time
     /// (persisted) so the gentle "not backed up" warning never nags.
@@ -52,6 +57,52 @@ struct ContentView: View {
             }
         }
         .task { await checkICloudAccount() }
+        // MARK: Intent routing (OpenItem / OpenLocation / Spotlight)
+        // onChange covers intents arriving while the app is up; onAppear
+        // covers an intent that cold-launched the app before views existed.
+        .onChange(of: IntentRouter.shared.pendingItemID) { consumePendingIntentRoutes() }
+        .onChange(of: IntentRouter.shared.pendingLocationID) { consumePendingIntentRoutes() }
+        .onChange(of: IntentRouter.shared.pendingSearchText) { consumePendingIntentRoutes() }
+        .onAppear { consumePendingIntentRoutes() }
+        // Spotlight tap-through on an indexed item/space. OpenItemIntent is
+        // the modern path; this user activity is the long-standing fallback.
+        .onContinueUserActivity(CSSearchableItemActionType) { activity in
+            if let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String {
+                IntentRouter.shared.handleSpotlightIdentifier(identifier)
+            }
+        }
+        .sheet(item: $intentItem) { item in
+            ItemDetailSheet(item: item)
+                .environment(navState)
+                .environment(recentStore)
+        }
+    }
+
+    /// Consumes pending intent destinations. Item opens win over location
+    /// opens if both are somehow set; search is handed off to BrowseTab
+    /// (which owns the search field) — we just switch to the right tab.
+    private func consumePendingIntentRoutes() {
+        let router = IntentRouter.shared
+
+        if let id = router.pendingItemID {
+            router.pendingItemID = nil
+            if let item = IntentStore.item(id: id) {
+                intentItem = item
+            }
+        }
+
+        if let id = router.pendingLocationID {
+            router.pendingLocationID = nil
+            if let location = IntentStore.location(id: id) {
+                navState.browseNavigationPath = location.ancestorChain
+                navState.selectedTab = 1
+            }
+        }
+
+        if router.pendingSearchText != nil {
+            // Leave the text in place for BrowseTab to consume on appear.
+            navState.selectedTab = 1
+        }
     }
 
     /// Checks the iCloud account once. Skipped when the CloudKit store already

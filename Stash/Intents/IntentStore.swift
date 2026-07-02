@@ -39,6 +39,31 @@ enum IntentStore {
         allItems().filter { ProductEntity.normalise($0.name) == productID }
     }
 
+    /// Every location in the store.
+    static func allLocations() -> [Location] {
+        (try? context.fetch(FetchDescriptor<Location>())) ?? []
+    }
+
+    /// The live Location for an entity id, or nil if it has since been deleted.
+    static func location(id: UUID) -> Location? {
+        allLocations().first { $0.id == id }
+    }
+
+    /// Every item stored in `location` or any space nested inside it.
+    /// Cycle-safe via the shared selfAndDescendantIDs walk.
+    static func items(inSubtreeOf location: Location) -> [Item] {
+        let subtree = location.selfAndDescendantIDs
+        return allItems().filter { item in
+            guard let home = item.location else { return false }
+            return subtree.contains(home.id)
+        }
+    }
+
+    /// Everything on the Restock list — the same definition RestockTab shows.
+    static func restockItems() -> [Item] {
+        allItems().filter(\.needsRestock)
+    }
+
     /// Persists pending changes. SwiftData autosaves in-app, but an intent that
     /// runs in a background process should not rely on that timing.
     static func save() {

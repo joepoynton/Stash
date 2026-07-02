@@ -68,6 +68,36 @@ final class Item {
         }
     }
 
+    // MARK: - Derived state
+    // Single source of truth for stock / attention states, shared by the app
+    // views (RestockTab, HomeTab) and the App Intents / App Entities layer.
+
+    /// Below minimum and not on order.
+    var isLowStock: Bool { orderStatus == .low }
+
+    /// The user has marked this item as ordered (Restock tab).
+    var isOnOrder: Bool { orderStatusRaw == OrderStatus.onOrder.rawValue }
+
+    /// Belongs on the Restock list: manually added, or tracked and below
+    /// minimum (whether or not it is already on order).
+    var needsRestock: Bool {
+        if manuallyRestocking { return true }
+        guard let qty = quantity, let min = minimumQuantity else { return false }
+        return qty < min
+    }
+
+    /// Expiry date set and already passed.
+    var isExpired: Bool {
+        guard let expiry = expiryDate else { return false }
+        return expiry <= Date()
+    }
+
+    /// Not yet expired, but expires within the next `days` days.
+    func expires(within days: Int, asOf now: Date = Date()) -> Bool {
+        guard let expiry = expiryDate else { return false }
+        return expiry > now && expiry <= now.addingTimeInterval(Double(days) * 86400)
+    }
+
     // MARK: - Model-layer write operations
     // Implemented here (not in views) so AppIntents can wrap them in v1.5.
 
