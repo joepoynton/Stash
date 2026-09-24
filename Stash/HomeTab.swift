@@ -303,6 +303,9 @@ struct HomeTab: View {
                         item: entry.item,
                         reason: entry.reason,
                         onTap: { selectedItem = entry.item },
+                        onVerify: entry.reason == .notVerified
+                            ? { Haptics.write(); entry.item.markAsVerified() }
+                            : nil,
                         onNeverStale: entry.reason == .notVerified
                             ? { Haptics.write(); entry.item.neverStale = true }
                             : nil
@@ -512,6 +515,8 @@ private struct NeedsAttentionRow: View {
     let item: Item
     let reason: AttentionReason
     let onTap: () -> Void
+    /// One-tap verify for stale (.notVerified) rows. nil for every other reason.
+    let onVerify: (() -> Void)?
     let onNeverStale: (() -> Void)?
 
     /// Colour of the root area this item belongs to — used for the left accent bar.
@@ -551,15 +556,35 @@ private struct NeedsAttentionRow: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 10)
-                .padding(.bottom, onNeverStale != nil ? 6 : 10)
+                .padding(.bottom, onVerify != nil ? 6 : 10)
 
-                if let action = onNeverStale {
-                    Button(action: action) {
-                        Text("Always verified")
-                            .font(.caption)
-                            .foregroundStyle(.teal)
+                // Stale rows get a visible, generous one-tap Verify control on the
+                // row surface — no swipe needed for the high-volume verify action.
+                // "Always verified" stays as the smaller secondary escape hatch.
+                if onVerify != nil || onNeverStale != nil {
+                    HStack(spacing: 10) {
+                        if let verify = onVerify {
+                            Button(action: verify) {
+                                Text("Verify")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 11)
+                                    .background(Capsule().fill(Color.teal))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        if let never = onNeverStale {
+                            Button(action: never) {
+                                Text("Always verified")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.teal)
+                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 8)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    .buttonStyle(.plain)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 10)
                 }
