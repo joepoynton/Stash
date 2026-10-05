@@ -18,9 +18,9 @@ Adding and moving possessions is now easier.
 - Joe checked moves, separate expand/Select controls, Quick Add saving through Done, Restock detail and swipe actions, and persistence after relaunch on his iPhone 17 Pro Max.
 - Signed Release archive and App Store export passed. Exported app is version 1.2 build 3 with distribution signing, production push entitlement and the existing Production CloudKit container iCloud.Poynt.Stash.
 - Camera/photo permission text and remote-notification background mode are present in the built app. Xcode moved permission/orientation settings from Info.plist into project settings.
-- Upload to App Store Connect succeeded. Apple processing is pending; internal group Joe - Internal Testing contains only Joe.
+- Upload to App Store Connect succeeded. Apple processing completed with VALID status; build 1.2 (3) is IN_BETA_TESTING, and internal group Joe - Internal Testing contains only Joe, whose invitation state is INVITED.
 - Archive and IPA retained locally in ignored build/releases/1.2-3/.
-- Existing listing wording and ten screenshots retained in the App Store Connect 1.2 draft. Manual release selected.
+- Existing listing wording and ten screenshots retained in the App Store Connect 1.2 draft. Manual release selected; build 3 attached. Version remains PREPARE_FOR_SUBMISSION, with no App Review submission.
 
 ## Remaining before submission
 
