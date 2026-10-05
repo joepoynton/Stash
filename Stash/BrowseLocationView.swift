@@ -395,6 +395,9 @@ struct BrowseLocationView: View {
                     showItemDeleteAlert = true
                 } label: { Label("Delete", systemImage: "trash") }
                     .tint(.red)
+                Button { activeSheet = .itemMove(item) }
+                    label: { Label("Move", systemImage: "arrow.up.arrow.down") }
+                    .tint(.teal)
                 Button { activeSheet = .itemDetail(item) }
                     label: { Label("Edit", systemImage: "pencil") }
                     .tint(.teal)
@@ -538,8 +541,9 @@ private struct BrowseLocationSheets: ViewModifier {
                         expandedIDs: $pickerExpandedIDs,
                         onSelect: { newLocation in
                             if let loc = newLocation {
+                                Haptics.write()
                                 item.location = loc
-                                item.lastVerified = Date()
+                                item.markAsVerified()
                             }
                         }
                     )

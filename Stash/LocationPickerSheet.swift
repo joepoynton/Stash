@@ -20,6 +20,10 @@ struct LocationPickerSheet: View {
     /// Passed in as a Binding so state survives across repeated openings of the sheet.
     @Binding var expandedIDs: Set<UUID>
     let onSelect: (Location?) -> Void
+    /// Optional deferred-placement choice, used only by Quick Add.
+    var onChooseUnsorted: (() -> Void)? = nil
+
+    @State private var searchText = ""
 
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Location.name) private var allLocations: [Location]
@@ -75,30 +79,69 @@ struct LocationPickerSheet: View {
                     }
                 }
 
-                ForEach(rows, id: \.location.id) { entry in
-                    LocationPickerRow(
-                        location: entry.location,
-                        depth: entry.depth,
-                        isExpanded: expandedIDs.contains(entry.location.id),
-                        hasChildren: entry.hasChildren,
-                        onToggle: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                if expandedIDs.contains(entry.location.id) {
-                                    expandedIDs.remove(entry.location.id)
-                                } else {
-                                    expandedIDs.insert(entry.location.id)
-                                }
-                            }
-                        },
-                        onSelect: {
-                            onSelect(entry.location)
+                if let onChooseUnsorted {
+                    Button {
+                        onChooseUnsorted()
+                        dismiss()
+                    } label: {
+                        Label("Unsorted", systemImage: "tray.fill")
+                            .foregroundStyle(Color(.label))
+                    }
+                }
+
+                if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let matches = allLocations.filter {
+                        !excludedIDs.contains($0.id) &&
+                        $0.pathString.localizedStandardContains(searchText.trimmingCharacters(in: .whitespacesAndNewlines))
+                    }
+                    if matches.isEmpty {
+                        Text("No matching spaces")
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(matches) { location in
+                        Button {
+                            onSelect(location)
                             dismiss()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(location.name)
+                                    .foregroundStyle(Color(.label))
+                                Text(location.pathString)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
-                    )
-                    // Remove default List row tap — each button handles its own area.
-                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                        .buttonStyle(.plain)
+                    }
+                } else {
+                    ForEach(rows, id: \.location.id) { entry in
+                        LocationPickerRow(
+                            location: entry.location,
+                            depth: entry.depth,
+                            isExpanded: expandedIDs.contains(entry.location.id),
+                            hasChildren: entry.hasChildren,
+                            onToggle: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    if expandedIDs.contains(entry.location.id) {
+                                        expandedIDs.remove(entry.location.id)
+                                    } else {
+                                        expandedIDs.insert(entry.location.id)
+                                    }
+                                }
+                            },
+                            onSelect: {
+                                onSelect(entry.location)
+                                dismiss()
+                            }
+                        )
+                        // Remove default List row tap — each button handles its own area.
+                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                    }
                 }
             }
+            .searchable(text: $searchText, prompt: "Find a space")
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

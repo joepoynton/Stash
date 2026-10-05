@@ -36,6 +36,7 @@ struct QuickAddSheet: View {
     @State private var itemToDetail: Item? = nil
     @State private var showUpgradePrompt = false
     @State private var selectedLocation: Location? = nil
+    @State private var didLoadInitialLocation = false
     @State private var showLocationPicker = false
     @State private var pickerExpandedIDs: Set<UUID> = []
     @FocusState private var focused: Bool
@@ -63,7 +64,7 @@ struct QuickAddSheet: View {
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "mappin.and.ellipse")
-                            Text(selectedLocation?.pathString ?? "Choose a space…")
+                            Text(selectedLocation?.pathString ?? "Unsorted")
                                 .lineLimit(1)
                             Image(systemName: "chevron.down")
                                 .font(.caption2)
@@ -110,8 +111,9 @@ struct QuickAddSheet: View {
             }
             .onAppear {
                 focused = true
-                if fixedLocation == nil && selectedLocation == nil {
-                    selectedLocation = lastUsedLocation
+                if !didLoadInitialLocation {
+                    if fixedLocation == nil { selectedLocation = lastUsedLocation }
+                    didLoadInitialLocation = true
                 }
             }
             .sheet(item: $itemToDetail, onDismiss: { focused = true }) {
@@ -125,7 +127,8 @@ struct QuickAddSheet: View {
                     expandedIDs: $pickerExpandedIDs,
                     onSelect: { location in
                         if let location { selectedLocation = location }
-                    }
+                    },
+                    onChooseUnsorted: { selectedLocation = nil }
                 )
             }
             .sheet(isPresented: $showUpgradePrompt, onDismiss: { focused = true }) {
@@ -145,16 +148,13 @@ struct QuickAddSheet: View {
     private func saveAndClear() {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
-        guard let location = targetLocation else {
-            focused = false
-            showLocationPicker = true
-            return
-        }
         guard storeKit.isPro || allItems.count < FeatureFlags.freeItemLimit else {
             focused = false
             showUpgradePrompt = true
             return
         }
+        let location = targetLocation ?? Location.unsortedArea(in: modelContext)
+        Haptics.write()
         // Insert first, then wire up the relationship. Setting `location` on an
         // Item that isn't yet in the context doesn't reliably populate the
         // inverse `location.items` array in memory, so the new item wouldn't

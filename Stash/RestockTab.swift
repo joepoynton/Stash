@@ -12,6 +12,7 @@ import UIKit
 struct RestockTab: View {
     @Query private var allItems: [Item]
 
+    @State private var selectedItem: Item?
     @State private var arrivedItem: Item?
     @State private var adjustMinItem: Item?
 
@@ -25,6 +26,9 @@ struct RestockTab: View {
                 }
             }
             .navigationTitle("Restock")
+            .sheet(item: $selectedItem) { item in
+                ItemDetailSheet(item: item)
+            }
             .sheet(item: $arrivedItem) { item in
                 ArrivalSheet(item: item)
             }
@@ -50,7 +54,11 @@ struct RestockTab: View {
             ForEach(groupedByArea) { group in
                 Section {
                     ForEach(group.items) { item in
-                        RestockRow(item: item)
+                        Button { selectedItem = item } label: {
+                            RestockRow(item: item)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                                 if item.orderStatus == .onOrder {
                                     Button("Mark as Arrived") {

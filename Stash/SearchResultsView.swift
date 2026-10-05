@@ -90,6 +90,9 @@ struct SearchResultsView: View {
                                     OutOfPlaceSwipeButton(item: item)
                                 }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button { itemToMove = item }
+                                        label: { Label("Move", systemImage: "arrow.up.arrow.down") }
+                                        .tint(.teal)
                                     Button(role: .destructive) { requestDelete(item) }
                                         label: { Label("Delete", systemImage: "trash") }
                                 }
@@ -122,8 +125,9 @@ struct SearchResultsView: View {
                 expandedIDs: $pickerExpandedIDs,
                 onSelect: { newLocation in
                     if let loc = newLocation {
+                        Haptics.write()
                         item.location = loc
-                        item.lastVerified = Date()
+                        item.markAsVerified()
                     }
                 }
             )

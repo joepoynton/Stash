@@ -207,8 +207,9 @@ struct ItemDetailSheet: View {
                     expandedIDs: $pickerExpandedIDs,
                     onSelect: { newLocation in
                         if let loc = newLocation {
+                            Haptics.write()
                             item.location = loc
-                            item.lastVerified = Date()
+                            item.markAsVerified()
                         }
                     }
                 )
