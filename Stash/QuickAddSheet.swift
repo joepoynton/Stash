@@ -49,12 +49,19 @@ struct QuickAddSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 0) {
-                TextField("Item name", text: $name)
-                    .font(.body)
-                    .padding()
-                    .focused($focused)
-                    .onSubmit { saveAndClear() }
-                    .submitLabel(.return)
+                HStack(spacing: 12) {
+                    TextField("Item name", text: $name)
+                        .font(.body)
+                        .focused($focused)
+                        .onSubmit { saveAndClear() }
+                        .submitLabel(.return)
+
+                    Button("Add") { saveAndClear() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.teal)
+                        .disabled(trimmedName.isEmpty)
+                }
+                .padding()
 
                 // Location chip — pickable mode only
                 if fixedLocation == nil {
@@ -106,7 +113,13 @@ struct QuickAddSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Done") {
+                        // A typed name must be saved before closing. Keep it
+                        // intact and stay open if the free-tier cap blocks it.
+                        if trimmedName.isEmpty || saveAndClear() {
+                            dismiss()
+                        }
+                    }
                 }
             }
             .onAppear {
@@ -145,13 +158,18 @@ struct QuickAddSheet: View {
         return allLocations.first { $0.id == uuid }
     }
 
-    private func saveAndClear() {
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @discardableResult
+    private func saveAndClear() -> Bool {
+        let trimmed = trimmedName
+        guard !trimmed.isEmpty else { return false }
         guard storeKit.isPro || allItems.count < FeatureFlags.freeItemLimit else {
             focused = false
             showUpgradePrompt = true
-            return
+            return false
         }
         let location = targetLocation ?? Location.unsortedArea(in: modelContext)
         Haptics.write()
@@ -168,5 +186,6 @@ struct QuickAddSheet: View {
         addedItems.insert(item, at: 0)   // newest at top
         name = ""
         focused = true
+        return true
     }
 }
