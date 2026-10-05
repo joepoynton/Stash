@@ -1,18 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-    <dict>
-        <key>UISupportedInterfaceOrientations</key>
-        <array>
-            <string>UIInterfaceOrientationPortrait</string>
-        </array>
-        <key>UIBackgroundModes</key>
-        <array>
-            <string>remote-notification</string>
-        </array>
-        <key>NSCameraUsageDescription</key>
-        <string>Stash uses the camera to photograph your spaces and items.</string>
-        <key>NSPhotoLibraryUsageDescription</key>
-        <string>Stash uses your photo library to add images to your spaces and items.</string>
-    </dict>
+<dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+</dict>
 </plist>
