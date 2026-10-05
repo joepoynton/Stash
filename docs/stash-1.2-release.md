@@ -20,8 +20,8 @@ Adding and moving possessions is now easier.
 - Camera/photo permission text and remote-notification background mode are present in the built app. Xcode moved permission/orientation settings from Info.plist into project settings.
 - Upload to App Store Connect succeeded. Apple processing completed with VALID status; build 1.2 (3) is IN_BETA_TESTING, and internal group Joe - Internal Testing contains only Joe, whose invitation state is INVITED.
 - Archive and IPA retained locally in ignored build/releases/1.2-3/.
-- Existing listing wording and ten screenshots retained in the App Store Connect 1.2 draft. Manual release selected; build 3 attached. Version remains PREPARE_FOR_SUBMISSION, with no App Review submission.
+- Existing listing wording and ten screenshots retained in the App Store Connect 1.2 draft. Manual release selected; build 3 attached. Joe confirmed the TestFlight build works and authorised submission. Submitted on 05/10/2026 at 12:07 BST; Apple confirmed WAITING_FOR_REVIEW, with MANUAL release retained.
 
-## Remaining before submission
+## Next action
 
-Install the TestFlight build and check Pro/free-tier behaviour, light/dark appearance and larger text. Finish Add/Return batch entry, Add detail, remembered/fixed locations and picker cancellation checks. Verify normal iCloud behaviour with the distribution build. Submit to App Review only after Joe approves.
+Wait for Apple's review result. If approved, ask Joe before manually releasing version 1.2. If Apple requests changes, inspect its feedback before editing or resubmitting.
