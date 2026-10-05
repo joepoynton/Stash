@@ -4,7 +4,7 @@
 //
 //  Tree picker used for "Move to…" in both location and item detail sheets.
 //  Roots are shown on first open; branches expand/collapse independently via
-//  a disclosure chevron. Tapping the name selects the destination.
+//  tapping the row. Only the separate Select button chooses a destination.
 //
 
 import SwiftUI
@@ -99,21 +99,18 @@ struct LocationPickerSheet: View {
                             .foregroundStyle(.secondary)
                     }
                     ForEach(matches) { location in
-                        Button {
-                            onSelect(location)
-                            dismiss()
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(location.name)
-                                    .foregroundStyle(Color(.label))
-                                Text(location.pathString)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                        LocationPickerRow(
+                            location: location,
+                            depth: 0,
+                            isExpanded: false,
+                            hasChildren: false,
+                            subtitle: location.pathString,
+                            onToggle: {},
+                            onSelect: {
+                                onSelect(location)
+                                dismiss()
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
+                        )
                     }
                 } else {
                     ForEach(rows, id: \.location.id) { entry in
@@ -160,6 +157,7 @@ private struct LocationPickerRow: View {
     let depth: Int
     let isExpanded: Bool
     let hasChildren: Bool
+    var subtitle: String? = nil
     let onToggle: () -> Void
     let onSelect: () -> Void
 
@@ -170,34 +168,51 @@ private struct LocationPickerRow: View {
                 Spacer().frame(width: CGFloat(depth) * 20)
             }
 
-            // Icon + name — tapping selects this location
-            Button(action: onSelect) {
-                HStack(spacing: 8) {
-                    Image(systemName: location.icon ?? "folder.fill")
-                        .frame(width: 24)
-                        .foregroundStyle(location.icon != nil ? .teal : Color(.secondaryLabel))
-                    Text(location.name)
-                        .foregroundStyle(Color(.label))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(height: 44)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            // Disclosure chevron — trailing side, 44×44pt tap target, only when has children
+            // Branch rows navigate; leaves and search labels never select on tap.
             if hasChildren {
                 Button(action: onToggle) {
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(Color(.secondaryLabel))
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .frame(width: 44, height: 44)
+                    locationLabel
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("\(isExpanded ? "Collapse" : "Expand") \(location.name)")
+            } else {
+                locationLabel
+            }
+
+            Button("Select", action: onSelect)
+                .buttonStyle(.bordered)
+                .tint(.teal)
+                .frame(minHeight: 44)
+                .accessibilityLabel("Select \(location.pathString)")
+        }
+    }
+
+    private var locationLabel: some View {
+        HStack(spacing: 8) {
+            Image(systemName: location.icon ?? "folder.fill")
+                .frame(width: 24)
+                .foregroundStyle(location.icon != nil ? .teal : Color(.secondaryLabel))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(location.name)
+                    .foregroundStyle(Color(.label))
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 8)
+            if hasChildren {
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color(.secondaryLabel))
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: 44)
+        .padding(.trailing, 12)
     }
 }
