@@ -42,10 +42,10 @@ final class SpreadsheetImportModel {
     /// Starts a fresh import from parsed rows and makes the first guess at
     /// the column roles.
     func load(_ parsed: ParsedSpreadsheet) {
-        rows = parsed.rows
-        let mapping = ImportAutoMapper.autoMap(rows: parsed.rows)
+        rows = ImportAutoMapper.dropEmptyColumns(parsed.rows)
+        let mapping = ImportAutoMapper.autoMap(rows: rows)
         self.mapping = mapping
-        columns = ImportAutoMapper.columns(for: parsed.rows, hasHeaderRow: mapping.hasHeaderRow)
+        columns = ImportAutoMapper.columns(for: rows, hasHeaderRow: mapping.hasHeaderRow)
         options = ImportOptions()
         options.regionDateOrder = Self.deviceDateOrder()
         destinationPath = nil

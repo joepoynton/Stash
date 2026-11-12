@@ -22,7 +22,7 @@ struct ImportHelpView: View {
         Point(id: 1, icon: "mappin.and.ellipse", title: "Only the item name is required",
               text: "Locations can be one column (Garage > Shelf 2) or several (Room, Cupboard, Shelf)."),
         Point(id: 2, icon: "doc.text", title: "Saving a CSV file",
-              text: "Numbers: Share, Export To, CSV. Excel: Save As or Export, CSV. Google Sheets: File, Download, Comma Separated Values. Then tap Choose File."),
+              text: "Numbers: tap the ⋯ button, then Export, then CSV. Excel and Google Sheets have a similar option to export or download as CSV. Then tap Choose File, or pick Stash from the share sheet."),
         Point(id: 3, icon: "doc.on.clipboard", title: "Or skip the file",
               text: "Select the cells, copy them, come back here and tap Paste Rows."),
         Point(id: 4, icon: "square.stack", title: "One sheet at a time",

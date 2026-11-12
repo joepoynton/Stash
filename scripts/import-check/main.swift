@@ -527,6 +527,16 @@ nonisolated func runAll(directory: URL) -> Bool {
     check.expect("Identical cells that fill down into different places are not copies",
                  fillPlan.items.count == 4 && fillPlan.skipped.isEmpty)
 
+    // Empty columns (a Numbers copy brings them along) are dropped.
+    let padded = [["Location", "Item", "", "", ""], ["Garage", "Tape", "", "", ""], ["Shed", "Rake", "", "", ""]]
+    check.expect("Fully empty columns are dropped",
+                 ImportAutoMapper.dropEmptyColumns(padded) == [["Location", "Item"], ["Garage", "Tape"], ["Shed", "Rake"]])
+    let gap = [["Item", "", "Qty"], ["Tape", "", "2"]]
+    check.expect("An empty column between two used ones is dropped too",
+                 ImportAutoMapper.dropEmptyColumns(gap) == [["Item", "Qty"], ["Tape", "2"]])
+    check.expect("Nothing is dropped when every column has something",
+                 ImportAutoMapper.dropEmptyColumns([["A", "B"], ["1", "2"]]) == [["A", "B"], ["1", "2"]])
+
     let headingRows = [["Item", "Location"], ["", "Shed > Shelf"], ["Rake", ""], ["Hoe", ""]]
     let headingPlan = ImportPlanner.plan(rows: headingRows, mapping: ImportAutoMapper.autoMap(rows: headingRows))
     check.expect("A location-only heading row still sets the location for the rows below",

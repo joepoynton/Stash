@@ -253,6 +253,20 @@ nonisolated enum ImportAutoMapper {
         }
     }
 
+    // MARK: Empty columns
+
+    /// Removes columns with nothing in any row. Copying cells from Numbers or
+    /// exporting a CSV often brings a run of empty columns along, which would
+    /// only clutter the "Match your columns" screen.
+    static func dropEmptyColumns(_ rows: [[String]]) -> [[String]] {
+        guard let width = rows.map(\.count).max(), width > 0 else { return rows }
+        let keep = (0..<width).filter { column in
+            rows.contains { column < $0.count && !$0[column].isEmpty }
+        }
+        guard keep.count < width, !keep.isEmpty else { return rows }
+        return rows.map { row in keep.map { $0 < row.count ? row[$0] : "" } }
+    }
+
     // MARK: Auto-mapping
 
     /// The first guess at each column's role, from its heading. Each role is

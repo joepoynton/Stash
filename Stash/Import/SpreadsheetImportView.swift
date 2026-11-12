@@ -78,6 +78,7 @@ struct SpreadsheetImportView: View {
                     }
                 }
         }
+        .tint(.teal)
     }
 
     // MARK: - Start screen
