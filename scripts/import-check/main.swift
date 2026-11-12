@@ -507,6 +507,26 @@ nonisolated func runAll(directory: URL) -> Bool {
     check.expect("An exact copy of an earlier row is skipped", copiedPlan.items.count == 1 && copiedPlan.skipCount(.repeatedInFile) == 2)
     check.expect("Exact-copy wording", copiedPlan.warnings.contains("2 rows are exact copies of earlier rows and will be skipped"))
 
+    // Same name kept, exact copy skipped, and identical cells that fill down
+    // into different places are not copies.
+    let tinRows = [
+        ["Item", "Location", "Qty"],
+        ["AA batteries", "Garage > Shelf 2", "12"],
+        ["AA batteries", "Garage > Shelf 2", "4"],
+        ["AA batteries", "Garage > Shelf 2", "12"],
+        ["AA batteries", "", "12"],
+        ["AA batteries", "Garage > Shelf 3", "12"],
+    ]
+    let tinPlan = ImportPlanner.plan(rows: tinRows, mapping: ImportAutoMapper.autoMap(rows: tinRows))
+    check.expect("Same name in the same place with different details: both kept",
+                 tinPlan.items.map(\.quantity) == [12, 4, 12, 12])
+    check.expect("Exact copy of an earlier row is skipped (row 4 only)",
+                 tinPlan.skipped.map(\.row) == [4] && tinPlan.skipCount(.repeatedInFile) == 1)
+    let fillRows = [["Item", "Location", "Qty"], ["Rake", "Garage", "1"], ["Tape", "", "1"], ["Hoe", "Shed", "1"], ["Tape", "", "1"]]
+    let fillPlan = ImportPlanner.plan(rows: fillRows, mapping: ImportAutoMapper.autoMap(rows: fillRows))
+    check.expect("Identical cells that fill down into different places are not copies",
+                 fillPlan.items.count == 4 && fillPlan.skipped.isEmpty)
+
     let headingRows = [["Item", "Location"], ["", "Shed > Shelf"], ["Rake", ""], ["Hoe", ""]]
     let headingPlan = ImportPlanner.plan(rows: headingRows, mapping: ImportAutoMapper.autoMap(rows: headingRows))
     check.expect("A location-only heading row still sets the location for the rows below",

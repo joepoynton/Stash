@@ -28,6 +28,10 @@ struct SettingsView: View {
     @State private var importResultMessage = ""
     @State private var importResultTitle = "Restore Complete"
     @State private var showSpreadsheetImport = false
+    // Handed back by the spreadsheet flow and acted on once its sheet has
+    // closed, so the alert doesn't fight the dismissal.
+    @State private var restoreDataFromFlow: Data? = nil
+    @State private var spreadsheetResultMessage: String? = nil
     @State private var showUpgradePrompt = false
     @State private var upgradeMessage = ""
     @State private var isRestoring = false
@@ -190,8 +194,11 @@ struct SettingsView: View {
                 }
             }
             // Spreadsheet import flow
-            .sheet(isPresented: $showSpreadsheetImport) {
-                SpreadsheetImportView()
+            .sheet(isPresented: $showSpreadsheetImport, onDismiss: finishSpreadsheetFlow) {
+                SpreadsheetImportView(
+                    onRestore: { restoreDataFromFlow = $0 },
+                    onFinished: { spreadsheetResultMessage = $0 }
+                )
             }
             // File picker for restoring a JSON backup
             .fileImporter(
@@ -331,7 +338,12 @@ struct SettingsView: View {
             showImportFailure("Could not read the file.")
             return
         }
+        prepareImport(from: data)
+    }
 
+    /// Decodes and counts a backup, then asks for confirmation. Shared by the
+    /// Restore from Backup file picker and a backup picked in the spreadsheet flow.
+    private func prepareImport(from data: Data) {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
@@ -344,6 +356,20 @@ struct SettingsView: View {
         pendingAreaCount = root.areas.count
         pendingItemCount = root.areas.reduce(0) { $0 + $1.itemCount }
         showImportConfirm = true
+    }
+
+    /// Runs once the spreadsheet flow's sheet has closed: shows its result,
+    /// or starts the restore if a Stash backup was picked there.
+    private func finishSpreadsheetFlow() {
+        if let message = spreadsheetResultMessage {
+            spreadsheetResultMessage = nil
+            importResultTitle = "Import Complete"
+            importResultMessage = message
+            showImportResult = true
+        } else if let data = restoreDataFromFlow {
+            restoreDataFromFlow = nil
+            prepareImport(from: data)
+        }
     }
 
     /// Performs the insert from the decoded, in-memory import. Enforces the
