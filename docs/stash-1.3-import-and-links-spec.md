@@ -160,7 +160,7 @@ If no column maps to Item name and there is exactly one column, that column is t
 Built from a plan computed off-main (B8). Nothing is written yet. Shows:
 
 - **Summary:** "Add 46 items in 9 spaces (4 new)". New spaces listed by path.
-- **Options:** Import into (destination), Fill down toggle (when relevant), Skip duplicates toggle (default **on**: skips a row whose name matches an existing item in the same space, case-insensitive, or an earlier row in the same file), date order toggle (when there is a date column).
+- **Options:** Import into (destination), Fill down toggle (when relevant), Skip duplicates toggle (default **on**: skips a row whose name matches an existing item in the same space, case-insensitive, or that is an exact copy of an earlier row in the same file. Rows in the file that only share a name, e.g. two "Titanium White" from different brands, are both kept: Joe's decision, 12/11/2026), date order toggle (when there is a date column).
 - **Sample:** the first 20 rows as `Path › Item  ×qty unit`, with a "Show all" push for the full list.
 - **Warnings** (only those that apply), e.g. "3 rows have no item name and will be skipped", "2 expiry dates couldn't be read; the text is kept in notes", "5 items already exist and will be skipped".
 - **Free tier:** if not Pro and the plan exceeds remaining capacity: "Free plan: 18 of 25 items left. 18 will be imported and 28 skipped." with the existing upgrade prompt as a secondary button.

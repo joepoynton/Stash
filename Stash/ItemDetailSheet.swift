@@ -93,10 +93,19 @@ struct ItemDetailSheet: View {
                     }
                 }
 
-                // Notes
-                Section("Notes") {
+                // Notes — any web links in the text get a tappable row below the field
+                Section {
                     TextField("Add notes…", text: notesBinding, axis: .vertical)
                         .lineLimit(3...8)
+                    ForEach(NoteLinks.links(in: item.notes)) { link in
+                        NoteLinkRow(link: link)
+                    }
+                } header: {
+                    Text("Notes")
+                } footer: {
+                    if (item.notes ?? "").isEmpty {
+                        Text("Paste a link, e.g. to a spreadsheet, and it becomes tappable.")
+                    }
                 }
 
                 // Quantity — toggle always visible; controls expand when tracking is on
@@ -477,6 +486,39 @@ struct ItemDetailSheet: View {
             get: { item.outOfPlaceNote ?? "" },
             set: { item.outOfPlaceNote = $0.isEmpty ? nil : $0 }
         )
+    }
+}
+
+// MARK: - Note link row
+
+/// A web link found in the notes, opened with a tap. Laid out to match the
+/// other icon-led rows in this sheet.
+private struct NoteLinkRow: View {
+    let link: NoteLink
+
+    var body: some View {
+        Link(destination: link.url) {
+            HStack {
+                Image(systemName: link.systemImage)
+                    .foregroundStyle(.teal)
+                    .frame(width: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(link.title)
+                        .foregroundStyle(Color(.label))
+                    if !link.host.isEmpty {
+                        Text(link.host)
+                            .font(.caption)
+                            .foregroundStyle(Color(.secondaryLabel))
+                            .lineLimit(1)
+                    }
+                }
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color(.tertiaryLabel))
+            }
+        }
     }
 }
 

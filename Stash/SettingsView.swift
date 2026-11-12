@@ -3,6 +3,7 @@
 //  Stash
 //
 //  Phase 8: Settings screen. Stale threshold, JSON export, about, notifications placeholder.
+//  1.3: "Import Data" split into "Import from Spreadsheet…" and "Restore from Backup…".
 //
 
 import SwiftUI
@@ -25,13 +26,18 @@ struct SettingsView: View {
     @State private var showImportPicker = false
     @State private var showImportResult = false
     @State private var importResultMessage = ""
-    @State private var importResultTitle = "Import Complete"
+    @State private var importResultTitle = "Restore Complete"
+    @State private var showSpreadsheetImport = false
+    // Handed back by the spreadsheet flow and acted on once its sheet has
+    // closed, so the alert doesn't fight the dismissal.
+    @State private var restoreDataFromFlow: Data? = nil
+    @State private var spreadsheetResultMessage: String? = nil
     @State private var showUpgradePrompt = false
     @State private var upgradeMessage = ""
     @State private var isRestoring = false
 
     // Import confirmation (D6) — decoded and counted before any write.
-    @State private var pendingImport: ImportRoot? = nil
+    @State private var pendingImport: BackupRestore.Pending? = nil
     @State private var pendingAreaCount = 0
     @State private var pendingItemCount = 0
     @State private var showImportConfirm = false
@@ -60,7 +66,7 @@ struct SettingsView: View {
 
                 // MARK: Data
 
-                Section("Data") {
+                Section {
                     // Export — Pro only
                     if storeKit.isPro {
                         Button("Export Data") {
@@ -86,16 +92,25 @@ struct SettingsView: View {
                             }
                         }
                     }
-                    // Import
-                    Button("Import Data") {
-                        if !storeKit.isPro && allItems.count >= FeatureFlags.freeItemLimit {
-                            upgradeMessage = "You've used \(allItems.count) of \(FeatureFlags.freeItemLimit) free items. Unlock Stash Pro for unlimited items, photos, and data export."
-                            showUpgradePrompt = true
-                        } else {
-                            showImportPicker = true
-                        }
+                    // Import from a spreadsheet (CSV file or pasted rows)
+                    Button("Import from Spreadsheet…") {
+                        ifBelowItemLimit { showSpreadsheetImport = true }
                     }
-                    // Restore Purchases
+                    // Restore — the Stash JSON export, read back in
+                    Button("Restore from Backup…") {
+                        ifBelowItemLimit { showImportPicker = true }
+                    }
+                } header: {
+                    Text("Data")
+                } footer: {
+                    Text("Spreadsheet import reads CSV files from Numbers, Excel or Google Sheets, or rows you copy and paste. Restore reads a file made with Export Data.")
+                }
+
+                // MARK: Purchases
+                // Its own section so "Restore Purchases" doesn't sit directly
+                // under "Restore from Backup…".
+
+                Section {
                     Button {
                         Task {
                             isRestoring = true
@@ -178,7 +193,14 @@ struct SettingsView: View {
                     ExportShareSheet(url: url)
                 }
             }
-            // File picker for JSON import
+            // Spreadsheet import flow
+            .sheet(isPresented: $showSpreadsheetImport, onDismiss: finishSpreadsheetFlow) {
+                SpreadsheetImportView(
+                    onRestore: { restoreDataFromFlow = $0 },
+                    onFinished: { spreadsheetResultMessage = $0 }
+                )
+            }
+            // File picker for restoring a JSON backup
             .fileImporter(
                 isPresented: $showImportPicker,
                 allowedContentTypes: [UTType.json]
@@ -187,14 +209,14 @@ struct SettingsView: View {
                 case .success(let url):
                     prepareImport(from: url)
                 case .failure:
-                    importResultTitle = "Import Failed"
+                    importResultTitle = "Restore Failed"
                     importResultMessage = "Could not open the file."
                     showImportResult = true
                 }
             }
             // Import confirmation — show what will be added before any write
-            .alert("Import Data?", isPresented: $showImportConfirm) {
-                Button("Import") { commitImport() }
+            .alert("Restore from Backup?", isPresented: $showImportConfirm) {
+                Button("Restore") { commitImport() }
                 Button("Cancel", role: .cancel) { pendingImport = nil }
             } message: {
                 Text("This will add \(pendingAreaCount) \(pendingAreaCount == 1 ? "area" : "areas") and \(pendingItemCount) \(pendingItemCount == 1 ? "item" : "items") alongside your existing data.")
@@ -291,6 +313,18 @@ struct SettingsView: View {
 
     // MARK: - Import
 
+    /// Free-tier gate shared by both import routes: a free user already at
+    /// the item limit gets the upgrade prompt instead. (Imports that would
+    /// cross the limit part-way are capped when they are written.)
+    private func ifBelowItemLimit(_ action: () -> Void) {
+        if !storeKit.isPro && allItems.count >= FeatureFlags.freeItemLimit {
+            upgradeMessage = "You've used \(allItems.count) of \(FeatureFlags.freeItemLimit) free items. Unlock Stash Pro for unlimited items, photos, and data export."
+            showUpgradePrompt = true
+        } else {
+            action()
+        }
+    }
+
     /// Reads + decodes the file (the only step that needs file access), counts
     /// what's inside, then asks for confirmation before writing anything (D6).
     private func prepareImport(from url: URL) {
@@ -304,91 +338,49 @@ struct SettingsView: View {
             showImportFailure("Could not read the file.")
             return
         }
+        prepareImport(from: data)
+    }
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-
-        guard let root = try? decoder.decode(ImportRoot.self, from: data) else {
-            showImportFailure("The file is not a valid Stash export.")
+    /// Decodes and counts a backup, then asks for confirmation. Shared by the
+    /// Restore from Backup file picker and a backup picked in the spreadsheet flow.
+    private func prepareImport(from data: Data) {
+        guard let pending = BackupRestore.decode(data) else {
+            showImportFailure(BackupRestore.invalidFileMessage)
             return
         }
 
-        pendingImport = root
-        pendingAreaCount = root.areas.count
-        pendingItemCount = root.areas.reduce(0) { $0 + $1.itemCount }
+        pendingImport = pending
+        pendingAreaCount = pending.areaCount
+        pendingItemCount = pending.itemCount
         showImportConfirm = true
     }
 
-    /// Performs the insert from the decoded, in-memory import. Enforces the
-    /// free-tier item cap so an import can never push a free user over the
-    /// limit (D6); locations themselves are not capped.
+    /// Runs once the spreadsheet flow's sheet has closed: shows its result,
+    /// or starts the restore if a Stash backup was picked there.
+    private func finishSpreadsheetFlow() {
+        if let message = spreadsheetResultMessage {
+            spreadsheetResultMessage = nil
+            importResultTitle = "Import Complete"
+            importResultMessage = message
+            showImportResult = true
+        } else if let data = restoreDataFromFlow {
+            restoreDataFromFlow = nil
+            prepareImport(from: data)
+        }
+    }
+
+    /// Restores the confirmed backup (see BackupRestore) and shows the result.
     private func commitImport() {
-        guard let root = pendingImport else { return }
+        guard let pending = pendingImport else { return }
         pendingImport = nil
 
-        var remaining = storeKit.isPro ? Int.max : max(0, FeatureFlags.freeItemLimit - allItems.count)
-        var importedCount = 0
-        var skipped = 0
-
-        for area in root.areas {
-            let location = Location(name: area.name, icon: area.icon, color: area.color, parent: nil)
-            location.sortOrder = area.sortOrder ?? 0
-            modelContext.insert(location)
-            insertChildren(of: area, into: location, remaining: &remaining, importedCount: &importedCount, skipped: &skipped)
-        }
-
-        try? modelContext.save()
-
-        let areaWord = pendingAreaCount == 1 ? "area" : "areas"
-        let itemWord = importedCount == 1 ? "item" : "items"
-        importResultTitle = "Import Complete"
-        if skipped > 0 {
-            let skippedWord = skipped == 1 ? "item was" : "items were"
-            importResultMessage = "Imported \(pendingAreaCount) \(areaWord) and \(importedCount) \(itemWord). \(skipped) \(skippedWord) skipped because the free plan is limited to \(FeatureFlags.freeItemLimit) items — upgrade to Stash Pro for unlimited items."
-        } else {
-            importResultMessage = "Imported \(pendingAreaCount) \(areaWord) and \(importedCount) \(itemWord)."
-        }
+        importResultTitle = "Restore Complete"
+        importResultMessage = BackupRestore.commit(pending, in: modelContext, existingItemCount: allItems.count, isPro: storeKit.isPro)
         showImportResult = true
     }
 
-    private func insertChildren(of node: ImportLocation, into location: Location, remaining: inout Int, importedCount: inout Int, skipped: inout Int) {
-        for importedChild in node.children ?? [] {
-            let child = Location(name: importedChild.name, icon: importedChild.icon, color: importedChild.color, parent: location)
-            child.sortOrder = importedChild.sortOrder ?? 0
-            modelContext.insert(child)
-            insertChildren(of: importedChild, into: child, remaining: &remaining, importedCount: &importedCount, skipped: &skipped)
-        }
-        for importedItem in node.items ?? [] {
-            guard remaining > 0 else {
-                skipped += 1
-                continue
-            }
-            let item = Item(name: importedItem.name, location: location)
-            item.notes = importedItem.notes
-            item.quantity = importedItem.quantity
-            item.unit = importedItem.unit
-            item.minimumQuantity = importedItem.minimumQuantity
-            item.expiryDate = importedItem.expiryDate
-            if importedItem.orderStatus == OrderStatus.onOrder.rawValue {
-                item.orderStatusRaw = OrderStatus.onOrder.rawValue
-            }
-            // D6: round-trip the previously-omitted state.
-            item.isOutOfPlace = importedItem.isOutOfPlace ?? false
-            item.outOfPlaceNote = importedItem.outOfPlaceNote
-            // New items default to 'always verified'; honour an explicit value
-            // from a Stash export, otherwise default to true.
-            item.neverStale = importedItem.neverStale ?? true
-            item.manuallyRestocking = importedItem.manuallyRestocking ?? false
-            if let dateAdded = importedItem.dateAdded { item.dateAdded = dateAdded }
-            if let lastVerified = importedItem.lastVerified { item.lastVerified = lastVerified }
-            modelContext.insert(item)
-            importedCount += 1
-            remaining -= 1
-        }
-    }
-
     private func showImportFailure(_ message: String) {
-        importResultTitle = "Import Failed"
+        importResultTitle = "Restore Failed"
         importResultMessage = message
         showImportResult = true
     }
@@ -473,43 +465,4 @@ private struct ExportItem: Encodable {
         dateAdded = item.dateAdded
         lastVerified = item.lastVerified
     }
-}
-
-// MARK: - Import data structures
-
-private struct ImportRoot: Decodable {
-    let appVersion: String?
-    let exportDate: Date?
-    let areas: [ImportLocation]
-}
-
-private struct ImportLocation: Decodable {
-    let name: String
-    let icon: String?
-    let color: String?
-    let sortOrder: Int?            // Optional — older exports omit it.
-    let children: [ImportLocation]?
-    let items: [ImportItem]?
-
-    /// Total items in this subtree, used for the pre-import confirmation count.
-    var itemCount: Int {
-        (items?.count ?? 0) + (children?.reduce(0) { $0 + $1.itemCount } ?? 0)
-    }
-}
-
-private struct ImportItem: Decodable {
-    let name: String
-    let notes: String?
-    let quantity: Int?
-    let unit: String?
-    let minimumQuantity: Int?
-    let expiryDate: Date?
-    let orderStatus: String?
-    // Optional — older exports omit these (D6, backward-compatible).
-    let isOutOfPlace: Bool?
-    let outOfPlaceNote: String?
-    let neverStale: Bool?
-    let manuallyRestocking: Bool?
-    let dateAdded: Date?
-    let lastVerified: Date?
 }

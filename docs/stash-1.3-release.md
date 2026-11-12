@@ -1,0 +1,40 @@
+# Stash 1.3
+
+Build: 4. Minimum iOS: 18.6.
+
+## Release notes
+
+Bring your existing lists into Stash.
+
+- Import from a spreadsheet: choose a CSV from Numbers, Excel or Google Sheets, or just copy rows and paste them in. Match the columns, check the preview, and Stash builds the spaces for you.
+- Send a CSV to Stash from Files, Mail or the share sheet and the import opens with the file ready.
+- Links in an item's notes are now tappable, so an item can point to a spreadsheet or web page with the detail.
+- "Import Data" is now "Restore from Backup", which says what it actually does.
+
+## Verified (12/11/2026)
+
+- Signed Debug simulator builds pass. 126 import checks pass (scripts/import-check/run.sh).
+- Simulator (iPhone 18 Pro Max): file import with the oil-paints test file, import destination picker, Excel file explanation, Stash backup handed to restore, opening a CSV and a backup from outside the app.
+- Joe's iPhone (debug build): Paste Rows from Numbers, Open in Stash from Numbers' share sheet (Stash is under More until iOS learns it), duplicate detection on a re-import ("6 items already exist"), tappable links (Open Link and Open Spreadsheet), Get Template share sheet, dark mode on the import screens.
+- Numbers export path confirmed as the three-dots button, Export, CSV. Excel and Google Sheets wording in the help is general, not checked.
+- No SwiftData or CloudKit changes. Info.plist gains document types (CSV, TSV, JSON) at Alternate rank with open-in-place off; UIBackgroundModes unchanged.
+- Signed Release archive and App Store export passed. Exported app is version 1.3 build 4 with Apple Distribution signing, production push and the Production CloudKit environment (iCloud.Poynt.Stash).
+- Apple's updated Developer Program License Agreement was accepted by Joe first (it blocked the export until then).
+- Free-plan limit checked on a Release build in the simulator (Pro not forced): a 40-row CSV into a store with 8 items showed "Free plan: 17 of 25 items left. 17 will be imported and 23 skipped." with the Unlock Stash Pro button. The import flow is teal.
+- Uploaded to App Store Connect from Xcode Organizer on 12/11/2026. Archive and IPA kept in ignored build/releases/1.3-4/.
+
+## Not yet checked
+
+- The distribution-signed build itself on a device: build 4 processed and export compliance answered (none), but the internal TestFlight group (automatic for Xcode builds) had not picked it up.
+- Inbox copy being removed after Open in Stash; opening a file while Settings is showing.
+
+## App Store Connect (12/11/2026)
+
+- TestFlight skipped for 1.3: build 4 processed and export compliance was answered (none), but the internal group (automatic for Xcode builds) never picked it up.
+- Created version 1.3, pasted the release notes above as What's New, attached build 4, kept manual release.
+- Apple's new age rating questions had to be answered before submitting; Joe answered them (all No: no web browsing, social, messaging or ads).
+- Joe submitted 1.3 for review on 12/11/2026.
+
+## Next action
+
+Wait for Apple's review result. If approved, ask Joe before manually releasing 1.3, then send Roger the update email. If Apple requests changes, read its feedback before editing or resubmitting. Merge feature/1.3-import-and-links into main. Separately: look into Roger's iPad and Mac sync problem (check the CloudKit schema is deployed to Production).
