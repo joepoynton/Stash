@@ -28,6 +28,13 @@ Bring your existing lists into Stash.
 - The distribution-signed build itself on a device: build 4 processed and export compliance answered (none), but the internal TestFlight group (automatic for Xcode builds) had not picked it up.
 - Inbox copy being removed after Open in Stash; opening a file while Settings is showing.
 
+## App Store Connect (12/11/2026)
+
+- TestFlight skipped for 1.3: build 4 processed and export compliance was answered (none), but the internal group (automatic for Xcode builds) never picked it up.
+- Created version 1.3, pasted the release notes above as What's New, attached build 4, kept manual release.
+- Apple's new age rating questions had to be answered before submitting; Joe answered them (all No: no web browsing, social, messaging or ads).
+- Joe submitted 1.3 for review on 12/11/2026.
+
 ## Next action
 
-Get build 4 into the internal TestFlight group (or decide to skip it), then create the 1.3 version in App Store Connect (release notes above, build 4 attached, manual release) and submit.
+Wait for Apple's review result. If approved, ask Joe before manually releasing 1.3, then send Roger the update email. If Apple requests changes, read its feedback before editing or resubmitting. Merge feature/1.3-import-and-links into main. Separately: look into Roger's iPad and Mac sync problem (check the CloudKit schema is deployed to Production).
