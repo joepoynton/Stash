@@ -3,6 +3,7 @@
 //  Stash
 //
 //  Phase 8: Settings screen. Stale threshold, JSON export, about, notifications placeholder.
+//  1.3: "Import Data" split into "Import from Spreadsheet…" and "Restore from Backup…".
 //
 
 import SwiftUI
@@ -25,7 +26,8 @@ struct SettingsView: View {
     @State private var showImportPicker = false
     @State private var showImportResult = false
     @State private var importResultMessage = ""
-    @State private var importResultTitle = "Import Complete"
+    @State private var importResultTitle = "Restore Complete"
+    @State private var showSpreadsheetImport = false
     @State private var showUpgradePrompt = false
     @State private var upgradeMessage = ""
     @State private var isRestoring = false
@@ -60,7 +62,7 @@ struct SettingsView: View {
 
                 // MARK: Data
 
-                Section("Data") {
+                Section {
                     // Export — Pro only
                     if storeKit.isPro {
                         Button("Export Data") {
@@ -86,16 +88,25 @@ struct SettingsView: View {
                             }
                         }
                     }
-                    // Import
-                    Button("Import Data") {
-                        if !storeKit.isPro && allItems.count >= FeatureFlags.freeItemLimit {
-                            upgradeMessage = "You've used \(allItems.count) of \(FeatureFlags.freeItemLimit) free items. Unlock Stash Pro for unlimited items, photos, and data export."
-                            showUpgradePrompt = true
-                        } else {
-                            showImportPicker = true
-                        }
+                    // Import from a spreadsheet (CSV file or pasted rows)
+                    Button("Import from Spreadsheet…") {
+                        ifBelowItemLimit { showSpreadsheetImport = true }
                     }
-                    // Restore Purchases
+                    // Restore — the Stash JSON export, read back in
+                    Button("Restore from Backup…") {
+                        ifBelowItemLimit { showImportPicker = true }
+                    }
+                } header: {
+                    Text("Data")
+                } footer: {
+                    Text("Spreadsheet import reads CSV files from Numbers, Excel or Google Sheets, or rows you copy and paste. Restore reads a file made with Export Data.")
+                }
+
+                // MARK: Purchases
+                // Its own section so "Restore Purchases" doesn't sit directly
+                // under "Restore from Backup…".
+
+                Section {
                     Button {
                         Task {
                             isRestoring = true
@@ -178,7 +189,11 @@ struct SettingsView: View {
                     ExportShareSheet(url: url)
                 }
             }
-            // File picker for JSON import
+            // Spreadsheet import flow
+            .sheet(isPresented: $showSpreadsheetImport) {
+                SpreadsheetImportView()
+            }
+            // File picker for restoring a JSON backup
             .fileImporter(
                 isPresented: $showImportPicker,
                 allowedContentTypes: [UTType.json]
@@ -187,14 +202,14 @@ struct SettingsView: View {
                 case .success(let url):
                     prepareImport(from: url)
                 case .failure:
-                    importResultTitle = "Import Failed"
+                    importResultTitle = "Restore Failed"
                     importResultMessage = "Could not open the file."
                     showImportResult = true
                 }
             }
             // Import confirmation — show what will be added before any write
-            .alert("Import Data?", isPresented: $showImportConfirm) {
-                Button("Import") { commitImport() }
+            .alert("Restore from Backup?", isPresented: $showImportConfirm) {
+                Button("Restore") { commitImport() }
                 Button("Cancel", role: .cancel) { pendingImport = nil }
             } message: {
                 Text("This will add \(pendingAreaCount) \(pendingAreaCount == 1 ? "area" : "areas") and \(pendingItemCount) \(pendingItemCount == 1 ? "item" : "items") alongside your existing data.")
@@ -291,6 +306,18 @@ struct SettingsView: View {
 
     // MARK: - Import
 
+    /// Free-tier gate shared by both import routes: a free user already at
+    /// the item limit gets the upgrade prompt instead. (Imports that would
+    /// cross the limit part-way are capped when they are written.)
+    private func ifBelowItemLimit(_ action: () -> Void) {
+        if !storeKit.isPro && allItems.count >= FeatureFlags.freeItemLimit {
+            upgradeMessage = "You've used \(allItems.count) of \(FeatureFlags.freeItemLimit) free items. Unlock Stash Pro for unlimited items, photos, and data export."
+            showUpgradePrompt = true
+        } else {
+            action()
+        }
+    }
+
     /// Reads + decodes the file (the only step that needs file access), counts
     /// what's inside, then asks for confirmation before writing anything (D6).
     private func prepareImport(from url: URL) {
@@ -341,7 +368,7 @@ struct SettingsView: View {
 
         let areaWord = pendingAreaCount == 1 ? "area" : "areas"
         let itemWord = importedCount == 1 ? "item" : "items"
-        importResultTitle = "Import Complete"
+        importResultTitle = "Restore Complete"
         if skipped > 0 {
             let skippedWord = skipped == 1 ? "item was" : "items were"
             importResultMessage = "Imported \(pendingAreaCount) \(areaWord) and \(importedCount) \(itemWord). \(skipped) \(skippedWord) skipped because the free plan is limited to \(FeatureFlags.freeItemLimit) items — upgrade to Stash Pro for unlimited items."
@@ -388,7 +415,7 @@ struct SettingsView: View {
     }
 
     private func showImportFailure(_ message: String) {
-        importResultTitle = "Import Failed"
+        importResultTitle = "Restore Failed"
         importResultMessage = message
         showImportResult = true
     }
