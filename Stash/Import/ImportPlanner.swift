@@ -109,7 +109,9 @@ nonisolated struct ImportPlan: Sendable {
         case noName
         /// Same name as an item already in that space.
         case alreadyExists
-        /// Same name and space as an earlier row in this file.
+        /// An exact copy of an earlier row in this file (every cell the same).
+        /// Rows that share a name but differ anywhere else, such as two
+        /// "Titanium White" paints from different brands, are both kept.
         case repeatedInFile
         case freeLimit
     }
@@ -200,8 +202,8 @@ nonisolated struct ImportPlan: Sendable {
         let repeated = skipCount(.repeatedInFile)
         if repeated > 0 {
             lines.append(repeated == 1
-                ? "1 row repeats an earlier row and will be skipped"
-                : "\(repeated) rows repeat an earlier row and will be skipped")
+                ? "1 row is an exact copy of an earlier row and will be skipped"
+                : "\(repeated) rows are exact copies of earlier rows and will be skipped")
         }
         if unreadableQuantityCount > 0 {
             lines.append(unreadableQuantityCount == 1
@@ -250,7 +252,9 @@ nonisolated enum ImportPlanner {
         var isUnsortedArea = false
         var childIndexByKey: [String: Int] = [:]
         var existingItemKeys: Set<String> = []
-        var fileItemKeys: Set<String> = []
+        /// Whole rows already planned into this location, for spotting
+        /// exact copies.
+        var fileRowKeys: Set<String> = []
         /// An item is being added here or somewhere beneath.
         var isUsed = false
         var receivesItems = false
@@ -425,12 +429,15 @@ nonisolated enum ImportPlanner {
                     plan.skipped.append(ImportPlan.SkippedRow(row: rowNumber, name: name, reason: .alreadyExists))
                     continue
                 }
-                if nodes[target].fileItemKeys.contains(nameKey) {
+                // Within the file, only an exact copy of an earlier row is a
+                // duplicate. A shared name alone is not: a paint list can
+                // hold two "Titanium White" from different brands.
+                let rowKey = cells.map(ImportFieldParsing.matchKey).joined(separator: "\u{1F}")
+                guard nodes[target].fileRowKeys.insert(rowKey).inserted else {
                     plan.skipped.append(ImportPlan.SkippedRow(row: rowNumber, name: name, reason: .repeatedInFile))
                     continue
                 }
             }
-            nodes[target].fileItemKeys.insert(nameKey)
 
             if let capacity = remainingCapacity {
                 guard capacity > 0 else {

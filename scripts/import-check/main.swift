@@ -162,7 +162,7 @@ nonisolated func run(_ scenario: Scenario, directory: URL) -> Outcome? {
             switch skip.reason {
             case .noName: reason = "no item name"
             case .alreadyExists: reason = "already exists"
-            case .repeatedInFile: reason = "repeats an earlier row"
+            case .repeatedInFile: reason = "exact copy of an earlier row"
             case .freeLimit: reason = "free plan limit"
             }
             print("  row \(skip.row): \(skip.name.isEmpty ? "(blank)" : skip.name) (\(reason))")
@@ -493,6 +493,19 @@ nonisolated func runAll(directory: URL) -> Bool {
     keepDuplicates.skipDuplicates = false
     let keptPlan = ImportPlanner.plan(rows: twinRows, mapping: ImportAutoMapper.autoMap(rows: twinRows), options: keepDuplicates, existing: twins)
     check.expect("Skip duplicates off imports them", keptPlan.items.count == 2)
+
+    // Same name in the same place within one file: both kept (Joe, 12/11/2026),
+    // even when the column that tells them apart is set to Ignore.
+    let paints = [["Drawer", "Colour", "Brand"],
+                  ["Drawer 1", "Titanium White", "Winsor & Newton"],
+                  ["", "Titanium White", "Michael Harding"]]
+    let paintPlan = ImportPlanner.plan(rows: paints, mapping: ImportAutoMapper.autoMap(rows: paints))
+    check.expect("Two Titanium Whites from different brands are both kept (Brand ignored)",
+                 paintPlan.items.count == 2 && paintPlan.skipped.isEmpty)
+    let copied = [["Item", "Location"], ["Tape", "Garage"], ["Tape", "Garage"], ["tape ", "garage"]]
+    let copiedPlan = ImportPlanner.plan(rows: copied, mapping: ImportAutoMapper.autoMap(rows: copied))
+    check.expect("An exact copy of an earlier row is skipped", copiedPlan.items.count == 1 && copiedPlan.skipCount(.repeatedInFile) == 2)
+    check.expect("Exact-copy wording", copiedPlan.warnings.contains("2 rows are exact copies of earlier rows and will be skipped"))
 
     let headingRows = [["Item", "Location"], ["", "Shed > Shelf"], ["Rake", ""], ["Hoe", ""]]
     let headingPlan = ImportPlanner.plan(rows: headingRows, mapping: ImportAutoMapper.autoMap(rows: headingRows))
