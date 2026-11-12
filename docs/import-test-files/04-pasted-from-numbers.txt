@@ -1,0 +1,6 @@
+Item	Location	Quantity
+HDMI cable	Office > Desk drawer	2
+USB-C charger	Office > Desk drawer	3
+Printer paper	Office > Shelf	1
+Stapler	Office > Desk drawer	
+Spare keyboard	Office > Cupboard	1
