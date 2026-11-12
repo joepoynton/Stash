@@ -37,7 +37,7 @@ struct SettingsView: View {
     @State private var isRestoring = false
 
     // Import confirmation (D6) — decoded and counted before any write.
-    @State private var pendingImport: ImportRoot? = nil
+    @State private var pendingImport: BackupRestore.Pending? = nil
     @State private var pendingAreaCount = 0
     @State private var pendingItemCount = 0
     @State private var showImportConfirm = false
@@ -344,17 +344,14 @@ struct SettingsView: View {
     /// Decodes and counts a backup, then asks for confirmation. Shared by the
     /// Restore from Backup file picker and a backup picked in the spreadsheet flow.
     private func prepareImport(from data: Data) {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-
-        guard let root = try? decoder.decode(ImportRoot.self, from: data) else {
-            showImportFailure("The file is not a valid Stash export.")
+        guard let pending = BackupRestore.decode(data) else {
+            showImportFailure(BackupRestore.invalidFileMessage)
             return
         }
 
-        pendingImport = root
-        pendingAreaCount = root.areas.count
-        pendingItemCount = root.areas.reduce(0) { $0 + $1.itemCount }
+        pendingImport = pending
+        pendingAreaCount = pending.areaCount
+        pendingItemCount = pending.itemCount
         showImportConfirm = true
     }
 
@@ -372,72 +369,14 @@ struct SettingsView: View {
         }
     }
 
-    /// Performs the insert from the decoded, in-memory import. Enforces the
-    /// free-tier item cap so an import can never push a free user over the
-    /// limit (D6); locations themselves are not capped.
+    /// Restores the confirmed backup (see BackupRestore) and shows the result.
     private func commitImport() {
-        guard let root = pendingImport else { return }
+        guard let pending = pendingImport else { return }
         pendingImport = nil
 
-        var remaining = storeKit.isPro ? Int.max : max(0, FeatureFlags.freeItemLimit - allItems.count)
-        var importedCount = 0
-        var skipped = 0
-
-        for area in root.areas {
-            let location = Location(name: area.name, icon: area.icon, color: area.color, parent: nil)
-            location.sortOrder = area.sortOrder ?? 0
-            modelContext.insert(location)
-            insertChildren(of: area, into: location, remaining: &remaining, importedCount: &importedCount, skipped: &skipped)
-        }
-
-        try? modelContext.save()
-
-        let areaWord = pendingAreaCount == 1 ? "area" : "areas"
-        let itemWord = importedCount == 1 ? "item" : "items"
         importResultTitle = "Restore Complete"
-        if skipped > 0 {
-            let skippedWord = skipped == 1 ? "item was" : "items were"
-            importResultMessage = "Imported \(pendingAreaCount) \(areaWord) and \(importedCount) \(itemWord). \(skipped) \(skippedWord) skipped because the free plan is limited to \(FeatureFlags.freeItemLimit) items — upgrade to Stash Pro for unlimited items."
-        } else {
-            importResultMessage = "Imported \(pendingAreaCount) \(areaWord) and \(importedCount) \(itemWord)."
-        }
+        importResultMessage = BackupRestore.commit(pending, in: modelContext, existingItemCount: allItems.count, isPro: storeKit.isPro)
         showImportResult = true
-    }
-
-    private func insertChildren(of node: ImportLocation, into location: Location, remaining: inout Int, importedCount: inout Int, skipped: inout Int) {
-        for importedChild in node.children ?? [] {
-            let child = Location(name: importedChild.name, icon: importedChild.icon, color: importedChild.color, parent: location)
-            child.sortOrder = importedChild.sortOrder ?? 0
-            modelContext.insert(child)
-            insertChildren(of: importedChild, into: child, remaining: &remaining, importedCount: &importedCount, skipped: &skipped)
-        }
-        for importedItem in node.items ?? [] {
-            guard remaining > 0 else {
-                skipped += 1
-                continue
-            }
-            let item = Item(name: importedItem.name, location: location)
-            item.notes = importedItem.notes
-            item.quantity = importedItem.quantity
-            item.unit = importedItem.unit
-            item.minimumQuantity = importedItem.minimumQuantity
-            item.expiryDate = importedItem.expiryDate
-            if importedItem.orderStatus == OrderStatus.onOrder.rawValue {
-                item.orderStatusRaw = OrderStatus.onOrder.rawValue
-            }
-            // D6: round-trip the previously-omitted state.
-            item.isOutOfPlace = importedItem.isOutOfPlace ?? false
-            item.outOfPlaceNote = importedItem.outOfPlaceNote
-            // New items default to 'always verified'; honour an explicit value
-            // from a Stash export, otherwise default to true.
-            item.neverStale = importedItem.neverStale ?? true
-            item.manuallyRestocking = importedItem.manuallyRestocking ?? false
-            if let dateAdded = importedItem.dateAdded { item.dateAdded = dateAdded }
-            if let lastVerified = importedItem.lastVerified { item.lastVerified = lastVerified }
-            modelContext.insert(item)
-            importedCount += 1
-            remaining -= 1
-        }
     }
 
     private func showImportFailure(_ message: String) {
@@ -526,43 +465,4 @@ private struct ExportItem: Encodable {
         dateAdded = item.dateAdded
         lastVerified = item.lastVerified
     }
-}
-
-// MARK: - Import data structures
-
-private struct ImportRoot: Decodable {
-    let appVersion: String?
-    let exportDate: Date?
-    let areas: [ImportLocation]
-}
-
-private struct ImportLocation: Decodable {
-    let name: String
-    let icon: String?
-    let color: String?
-    let sortOrder: Int?            // Optional — older exports omit it.
-    let children: [ImportLocation]?
-    let items: [ImportItem]?
-
-    /// Total items in this subtree, used for the pre-import confirmation count.
-    var itemCount: Int {
-        (items?.count ?? 0) + (children?.reduce(0) { $0 + $1.itemCount } ?? 0)
-    }
-}
-
-private struct ImportItem: Decodable {
-    let name: String
-    let notes: String?
-    let quantity: Int?
-    let unit: String?
-    let minimumQuantity: Int?
-    let expiryDate: Date?
-    let orderStatus: String?
-    // Optional — older exports omit these (D6, backward-compatible).
-    let isOutOfPlace: Bool?
-    let outOfPlaceNote: String?
-    let neverStale: Bool?
-    let manuallyRestocking: Bool?
-    let dateAdded: Date?
-    let lastVerified: Date?
 }

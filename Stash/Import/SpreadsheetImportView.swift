@@ -23,6 +23,9 @@ struct SpreadsheetImportView: View {
     var onRestore: (Data) -> Void
     /// Called after a successful import with the message for the result alert.
     var onFinished: (String) -> Void
+    /// A file that arrived from outside (Files, Mail, the share sheet). The
+    /// flow starts with it already loaded instead of waiting for Choose File.
+    var openedFile: ImportOpenedFile? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -33,10 +36,7 @@ struct SpreadsheetImportView: View {
     @State private var errorMessage: String?
     @State private var templateURL: URL?
     @State private var showTemplateShare = false
-
-    /// Excel and Numbers documents can be picked (so a folder of them doesn't
-    /// look empty) and then explained, because Stash only reads text.
-    private static let spreadsheetDocumentExtensions: Set<String> = ["xlsx", "xlsm", "xls", "numbers"]
+    @State private var handledOpenedFile = false
 
     private static var pickerTypes: [UTType] {
         var types: [UTType] = [.commaSeparatedText, .tabSeparatedText, .delimitedText, .plainText, .json]
@@ -122,6 +122,14 @@ struct SpreadsheetImportView: View {
             }
         }
         .disabled(isLoading)
+        .task {
+            guard let openedFile, !handledOpenedFile else { return }
+            handledOpenedFile = true
+            switch openedFile {
+            case .data(let data, let fileExtension): process(data: data, fileExtension: fileExtension)
+            case .failed(let message): errorMessage = message
+            }
+        }
         .overlay {
             if isLoading { ProgressView().controlSize(.large) }
         }
@@ -149,30 +157,17 @@ struct SpreadsheetImportView: View {
             errorMessage = "Could not open the file."
             return
         }
-
-        // Excel and Numbers documents: explain, don't try to read them.
-        if Self.spreadsheetDocumentExtensions.contains(url.pathExtension.lowercased()) {
-            errorMessage = SpreadsheetParseError.spreadsheetDocument.message
-            return
+        switch ImportFileReader.read(url) {
+        case .data(let data, let fileExtension): process(data: data, fileExtension: fileExtension)
+        case .failed(let message): errorMessage = message
         }
+    }
 
-        guard url.startAccessingSecurityScopedResource() else {
-            errorMessage = "Permission denied. Could not access the file."
-            return
-        }
-        defer { url.stopAccessingSecurityScopedResource() }
-
-        if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > SpreadsheetParser.maxBytes {
-            errorMessage = SpreadsheetParseError.tooLarge.message
-            return
-        }
-        guard let data = try? Data(contentsOf: url) else {
-            errorMessage = "Could not read the file."
-            return
-        }
-
-        // A Stash backup picked here goes to the restore path.
-        let looksLikeJSON = url.pathExtension.lowercased() == "json"
+    /// Sends a file's contents on: a Stash backup goes to the restore path,
+    /// anything else is read as a spreadsheet.
+    private func process(data: Data, fileExtension: String) {
+        let isJSONFile = fileExtension == "json"
+        let looksLikeJSON = isJSONFile
             || data.first(where: { !" \n\r\t".utf8.contains($0) }) == UInt8(ascii: "{")
         if looksLikeJSON {
             if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -182,14 +177,13 @@ struct SpreadsheetImportView: View {
                 } else {
                     errorMessage = "This JSON file isn't a Stash backup. To bring in a list, save it as CSV or use Paste Rows."
                 }
-            } else if url.pathExtension.lowercased() == "json" {
-                errorMessage = "This JSON file couldn't be read."
-            } else {
-                load { try SpreadsheetParser.parse(data: data) }
+                return
             }
-            return
+            if isJSONFile {
+                errorMessage = "This JSON file couldn't be read."
+                return
+            }
         }
-
         load { try SpreadsheetParser.parse(data: data) }
     }
 
@@ -225,5 +219,43 @@ struct SpreadsheetImportView: View {
     private func removeTemplateFile() {
         if let templateURL { try? FileManager.default.removeItem(at: templateURL) }
         templateURL = nil
+    }
+}
+
+// MARK: - Reading a file
+
+/// A file's contents ready for the flow, or why it couldn't be read.
+enum ImportOpenedFile {
+    case data(Data, fileExtension: String)
+    case failed(String)
+}
+
+enum ImportFileReader {
+
+    /// Excel and Numbers documents can be picked (so a folder of them doesn't
+    /// look empty) and then explained, because Stash only reads text.
+    static let spreadsheetDocumentExtensions: Set<String> = ["xlsx", "xlsm", "xls", "numbers"]
+
+    /// Reads a file chosen in the picker or handed over by another app,
+    /// checking the size first so a huge file never gets loaded.
+    static func read(_ url: URL) -> ImportOpenedFile {
+        let fileExtension = url.pathExtension.lowercased()
+
+        if spreadsheetDocumentExtensions.contains(fileExtension) {
+            return .failed(SpreadsheetParseError.spreadsheetDocument.message)
+        }
+
+        // Files picked in place need this; a copy in Stash's own Inbox doesn't
+        // (the call just returns false).
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+        if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > SpreadsheetParser.maxBytes {
+            return .failed(SpreadsheetParseError.tooLarge.message)
+        }
+        guard let data = try? Data(contentsOf: url) else {
+            return .failed("Could not read the file.")
+        }
+        return .data(data, fileExtension: fileExtension)
     }
 }

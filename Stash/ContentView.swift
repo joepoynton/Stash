@@ -15,6 +15,19 @@ struct ContentView: View {
     @State private var recentStore = RecentlyAccessedStore()
     @State private var syncBannerDismissed = false
 
+    // "Open in Stash": a CSV or backup handed over from Files, Mail or the
+    // share sheet (1.3). Results are held until the import sheet has closed so
+    // the alerts don't fight its dismissal.
+    @Environment(\.modelContext) private var modelContext
+    @Environment(StoreKitManager.self) private var storeKit
+    @State private var openedImport: OpenedImport?
+    @State private var restoreDataFromFlow: Data?
+    @State private var restoreData: Data?
+    @State private var importResultMessage: String?
+    @State private var showImportResult = false
+    @State private var upgradeMessage = ""
+    @State private var showUpgradePrompt = false
+
     /// F10: true when no iCloud account is signed in. The dismissal is one-time
     /// (persisted) so the gentle "not backed up" warning never nags.
     @State private var iCloudNoAccount = false
@@ -52,6 +65,60 @@ struct ContentView: View {
             }
         }
         .task { await checkICloudAccount() }
+        .onOpenURL { handleOpenedURL($0) }
+        .sheet(item: $openedImport, onDismiss: finishOpenedImport) { opened in
+            SpreadsheetImportView(
+                onRestore: { restoreDataFromFlow = $0 },
+                onFinished: { importResultMessage = $0 },
+                openedFile: opened.file
+            )
+        }
+        .sheet(isPresented: $showUpgradePrompt) {
+            UpgradePromptSheet(message: upgradeMessage)
+        }
+        .backupRestorePrompt(data: $restoreData)
+        .alert("Import Complete", isPresented: $showImportResult) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(importResultMessage ?? "")
+        }
+    }
+
+    // MARK: - Open in Stash
+
+    /// File types Stash accepts from other apps (matches Info.plist).
+    private static let openableExtensions: Set<String> = ["csv", "tsv", "tab", "txt", "text", "json"]
+
+    private func handleOpenedURL(_ url: URL) {
+        guard url.isFileURL, Self.openableExtensions.contains(url.pathExtension.lowercased()) else { return }
+
+        // Read it now, then remove the copy iOS put in Stash's Inbox.
+        let file = ImportFileReader.read(url)
+        if url.deletingLastPathComponent().lastPathComponent == "Inbox" {
+            try? FileManager.default.removeItem(at: url)
+        }
+
+        // Same free-tier gate as Settings: at the item limit, offer Pro instead.
+        let itemCount = (try? modelContext.fetchCount(FetchDescriptor<Item>())) ?? 0
+        if !storeKit.isPro && itemCount >= FeatureFlags.freeItemLimit {
+            upgradeMessage = "You've used \(itemCount) of \(FeatureFlags.freeItemLimit) free items. Unlock Stash Pro for unlimited items, photos, and data export."
+            showUpgradePrompt = true
+            return
+        }
+        importResultMessage = nil
+        restoreDataFromFlow = nil
+        openedImport = OpenedImport(file: file)
+    }
+
+    /// Runs once the import sheet has closed: shows its result, or starts the
+    /// restore if the file was a Stash backup.
+    private func finishOpenedImport() {
+        if importResultMessage != nil {
+            showImportResult = true
+        } else if let data = restoreDataFromFlow {
+            restoreDataFromFlow = nil
+            restoreData = data
+        }
     }
 
     /// Checks the iCloud account once. Skipped when the CloudKit store already
@@ -90,6 +157,13 @@ struct ContentView: View {
         .padding(.horizontal, 12)
         .padding(.top, 4)
     }
+}
+
+/// A file waiting in the import sheet. Identifiable so the sheet can be
+/// driven by it.
+private struct OpenedImport: Identifiable {
+    let id = UUID()
+    let file: ImportOpenedFile
 }
 
 #Preview {
