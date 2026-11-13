@@ -17,7 +17,7 @@ Bring your existing lists into Stash.
 - Simulator (iPhone 18 Pro Max): file import with the oil-paints test file, import destination picker, Excel file explanation, Stash backup handed to restore, opening a CSV and a backup from outside the app.
 - Joe's iPhone (debug build): Paste Rows from Numbers, Open in Stash from Numbers' share sheet (Stash is under More until iOS learns it), duplicate detection on a re-import ("6 items already exist"), tappable links (Open Link and Open Spreadsheet), Get Template share sheet, dark mode on the import screens.
 - Numbers export path confirmed as the three-dots button, Export, CSV. Excel and Google Sheets wording in the help is general, not checked.
-- No SwiftData or CloudKit changes. Info.plist gains document types (CSV, TSV, JSON) at Alternate rank with open-in-place off; UIBackgroundModes unchanged.
+- No SwiftData model or CloudKit configuration changes in the app. Info.plist gains document types (CSV, TSV, JSON) at Alternate rank with open-in-place off; UIBackgroundModes unchanged.
 - Signed Release archive and App Store export passed. Exported app is version 1.3 build 4 with Apple Distribution signing, production push and the Production CloudKit environment (iCloud.Poynt.Stash).
 - Apple's updated Developer Program License Agreement was accepted by Joe first (it blocked the export until then).
 - Free-plan limit checked on a Release build in the simulator (Pro not forced): a 40-row CSV into a store with 8 items showed "Free plan: 17 of 25 items left. 17 will be imported and 23 skipped." with the Unlock Stash Pro button. The import flow is teal.
@@ -35,6 +35,15 @@ Bring your existing lists into Stash.
 - Apple's new age rating questions had to be answered before submitting; Joe answered them (all No: no web browsing, social, messaging or ads).
 - Joe submitted 1.3 for review on 12/11/2026.
 
+## CloudKit Production schema (13/11/2026)
+
+- Roger's iPhone, iPad and Mac never synced, although all three showed iCloud "Active", had Stash switched on in iCloud settings, the same Apple ID and plenty of storage. (Stash's "Active" row only checks the iCloud account status, not whether data is moving.)
+- Cause: the CloudKit schema had never been deployed to Production. Production held only the default `Users` record type; Development had `CD_Item` and `CD_Location` marked Modified. So no App Store or TestFlight copy of Stash has ever synced; Xcode builds use Development, which is why Joe's testing never showed it.
+- Checked every field before deploying (Production fields can never be removed): `CD_Item` 18 record fields and `CD_Location` 11, all matching the model, nothing stray.
+- Deployed to Production from the CloudKit Console on 13/11/2026 with Joe's approval. Production now shows `CD_Item` (24 fields) and `CD_Location` (17 fields). No app update needed.
+- Expected effect: each device uploads its local data the next time Stash is opened, and a person's devices merge. Anyone who created the same space on more than one device will see duplicates to tidy by hand.
+- Rule from now on: whenever `Item` or `Location` gains a stored property, deploy the schema to Production before that build ships.
+
 ## Next action
 
-Wait for Apple's review result. If approved, ask Joe before manually releasing 1.3, then send Roger the update email. If Apple requests changes, read its feedback before editing or resubmitting. Merge feature/1.3-import-and-links into main. Separately: look into Roger's iPad and Mac sync problem (check the CloudKit schema is deployed to Production).
+Wait for Apple's review result. If approved, ask Joe before manually releasing 1.3, then send Roger the update email. If Apple requests changes, read its feedback before editing or resubmitting. Confirm with Roger that his devices now sync. Worth checking GroceryFlow's container (iCloud.Poynt.GroceryFlow) for the same undeployed schema.
