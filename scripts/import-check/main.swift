@@ -298,6 +298,7 @@ nonisolated func runAll(directory: URL) -> Bool {
         check.expect("5 items", out.plan.items.count == 5)
         check.expect("All into Unsorted", out.plan.items.allSatisfy { $0.path == ["Unsorted"] }
                      && out.plan.newLocations.count == 1 && out.plan.newLocations.first?.isUnsortedArea == true)
+        check.expect("All 5 counted as going to Unsorted", out.plan.unsortedItemCount == 5)
     }
     do {
         let hallID = UUID(), drawerID = UUID()
@@ -310,6 +311,7 @@ nonisolated func runAll(directory: URL) -> Bool {
         if let out = run(scenario, directory: directory) {
             check.expect("5 items straight into the chosen destination, nothing created",
                          out.plan.items.count == 5 && out.plan.items.allSatisfy { $0.target == .existing(drawerID) } && out.plan.newLocations.isEmpty)
+            check.expect("None counted as going to Unsorted", out.plan.unsortedItemCount == 0)
         }
     }
 

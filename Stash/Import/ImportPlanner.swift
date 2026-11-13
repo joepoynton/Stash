@@ -139,6 +139,10 @@ nonisolated struct ImportPlan: Sendable {
     /// blanks following non-blanks.
     var fillDownApplies = false
 
+    /// Items going into Unsorted because their row has no location and the
+    /// import is to the top level. The preview asks where they should go.
+    var unsortedItemCount = 0
+
     var unreadableQuantityCount = 0
     var unreadableExpiryCount = 0
     var ignoredMinimumCount = 0
@@ -415,9 +419,11 @@ nonisolated enum ImportPlanner {
             // Find (or pencil in) the target. Nothing pencilled in here is
             // created unless an item actually ends up in or under it.
             var target = destinationIndex
+            var goesToUnsorted = false
             if components.isEmpty {
                 if destinationIndex == 0 {
                     target = child(of: 0, named: options.unsortedAreaName, isUnsortedArea: true)
+                    goesToUnsorted = true
                 }
             } else {
                 for component in components { target = child(of: target, named: component) }
@@ -513,6 +519,7 @@ nonisolated enum ImportPlanner {
                 current = nodes[index].parent
             }
 
+            if goesToUnsorted { plan.unsortedItemCount += 1 }
             plan.items.append(ImportPlan.PlannedItem(
                 row: rowNumber,
                 name: name,

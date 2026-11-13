@@ -95,6 +95,7 @@ struct ImportPreviewView: View {
 
     private func content(_ plan: ImportPlan) -> some View {
         List {
+            unsortedSection(plan)
             summarySection(plan)
             optionsSection(plan)
             freePlanSection(plan)
@@ -103,6 +104,39 @@ struct ImportPreviewView: View {
         }
         .opacity(model.isPlanning ? 0.6 : 1)
         .safeAreaInset(edge: .bottom) { importBar(plan) }
+    }
+
+    // MARK: Unsorted
+
+    /// Rows with no location land in Unsorted when importing to the top
+    /// level. Easy to miss (a customer moved 52 paints by hand), so this
+    /// sits above everything else and offers the destination picker.
+    @ViewBuilder
+    private func unsortedSection(_ plan: ImportPlan) -> some View {
+        let count = plan.unsortedItemCount
+        if count > 0 {
+            Section {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label {
+                        Text("\(count) \(count == 1 ? "item has" : "items have") no location")
+                            .font(.headline)
+                    } icon: {
+                        Image(systemName: "tray.fill")
+                            .foregroundStyle(.orange)
+                    }
+                    Text("\(count == 1 ? "It" : "They") will go into Unsorted. Choose a space to import into, or go back and set a column to Location.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color(.secondaryLabel))
+                }
+                .padding(.vertical, 2)
+
+                Button {
+                    showDestinationPicker = true
+                } label: {
+                    Label("Choose Where They Go", systemImage: "folder")
+                }
+            }
+        }
     }
 
     // MARK: Summary
