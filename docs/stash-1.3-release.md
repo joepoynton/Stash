@@ -44,6 +44,10 @@ Bring your existing lists into Stash.
 - Expected effect: each device uploads its local data the next time Stash is opened, and a person's devices merge. Anyone who created the same space on more than one device will see duplicates to tidy by hand.
 - Rule from now on: whenever `Item` or `Location` gains a stored property, deploy the schema to Production before that build ships.
 
+## Released (13/11/2026)
+
+- Apple approved 1.3 (Pending Developer Release). Released manually on 13/11/2026 with Joe's go-ahead, to all 175 countries and regions, no phased release. App Store Connect now shows 1.3 Ready for Distribution.
+
 ## Next action
 
-Wait for Apple's review result. If approved, ask Joe before manually releasing 1.3, then send Roger the update email. If Apple requests changes, read its feedback before editing or resubmitting. Confirm with Roger that his devices now sync. Worth checking GroceryFlow's container (iCloud.Poynt.GroceryFlow) for the same undeployed schema.
+Send Roger the update and sync email, and confirm with him that his devices now sync. Worth checking GroceryFlow's container (iCloud.Poynt.GroceryFlow) for the same undeployed schema.
