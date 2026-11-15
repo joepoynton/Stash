@@ -73,6 +73,14 @@ struct BrowseLocationView: View {
     // Reorder mode
     @State private var editMode: EditMode = .inactive
 
+    // Select mode (batch actions). Never on at the same time as reorder: each
+    // one's entry point is hidden while the other is active.
+    @State private var selectingItems = false
+    @State private var selectedItemIDs: Set<UUID> = []
+    @State private var showBatchMove = false
+    @State private var showBatchDelete = false
+    @State private var showVerifyAll = false
+
     // MARK: - Area tint
 
     /// Walks up to the root ancestor and returns its colour, falling back to teal.
@@ -122,6 +130,17 @@ struct BrowseLocationView: View {
         location.ancestorChain
     }
 
+    /// The selected items still in this space (one could vanish mid-selection,
+    /// for example deleted on another device).
+    private var selectedItems: [Item] {
+        location.itemList.filter { selectedItemIDs.contains($0.id) }
+    }
+
+    private var allItemsSelected: Bool {
+        let list = location.itemList
+        return !list.isEmpty && list.allSatisfy { selectedItemIDs.contains($0.id) }
+    }
+
     /// Free tier at (or over) the item cap — adding must show the paywall, not the form.
     private var atFreeLimit: Bool {
         !storeKit.isPro && allItems.count >= FeatureFlags.freeItemLimit
@@ -145,6 +164,17 @@ struct BrowseLocationView: View {
                 listContent(children: children, items: items, mixed: mixed)
             }
         }
+        .safeAreaInset(edge: .bottom) {
+            if selectingItems {
+                BatchActionBar(
+                    selectedItems: selectedItems,
+                    onMove: { showBatchMove = true },
+                    onVerify: batchVerify,
+                    onRestock: batchRestock,
+                    onDelete: { showBatchDelete = true }
+                )
+            }
+        }
         .searchable(
             text: $searchText,
             placement: .navigationBarDrawer(displayMode: .automatic),
@@ -152,10 +182,32 @@ struct BrowseLocationView: View {
         )
         .tint(areaTint)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(selectingItems)
         .toolbar {
-            ToolbarItem(placement: .principal) { breadcrumbHeader }
+            if selectingItems {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(allItemsSelected ? "Deselect All" : "Select All") {
+                        if allItemsSelected {
+                            selectedItemIDs = []
+                        } else {
+                            selectedItemIDs = Set(location.itemList.map(\.id))
+                        }
+                    }
+                }
+            }
+            ToolbarItem(placement: .principal) {
+                if selectingItems {
+                    Text(selectedItems.isEmpty ? "Select Items" : "\(selectedItems.count) Selected")
+                        .font(.headline)
+                } else {
+                    breadcrumbHeader
+                }
+            }
             ToolbarItemGroup(placement: .navigationBarTrailing) {
-                if editMode.isEditing {
+                if selectingItems {
+                    Button("Done") { exitSelection() }
+                        .fontWeight(.semibold)
+                } else if editMode.isEditing {
                     Button("Done") {
                         withAnimation { editMode = .inactive }
                     }
@@ -167,6 +219,24 @@ struct BrowseLocationView: View {
                 }
             }
         }
+        // Searching shows results from everywhere, so selection ends there.
+        .onChange(of: searchText) { _, newValue in
+            if !newValue.isEmpty && selectingItems { exitSelection() }
+        }
+        .onDisappear {
+            if selectingItems { exitSelection() }
+        }
+        .modifier(BatchSelectionSheets(
+            location: location,
+            selectedCount: selectedItems.count,
+            showMove: $showBatchMove,
+            showDelete: $showBatchDelete,
+            showVerifyAll: $showVerifyAll,
+            pickerExpandedIDs: $pickerExpandedIDs,
+            onMove: batchMove,
+            onDelete: batchDelete,
+            onVerifyAll: verifyAllHere
+        ))
         .onAppear {
             // Deep-link from an Area card's "Reorder Spaces" context action.
             if navState.pendingReorderLocationID == location.id {
@@ -241,16 +311,91 @@ struct BrowseLocationView: View {
         }
     }
 
+    /// Shown when the space has two or more items: select mode, Verify All
+    /// Here, and the sort order.
     private var sortMenu: some View {
         Menu {
-            Picker("Sort items", selection: $itemSortRaw) {
+            Button { startSelecting() } label: {
+                Label("Select Items", systemImage: "checkmark.circle")
+            }
+            Button { showVerifyAll = true } label: {
+                Label("Verify All Here", systemImage: "checkmark.seal")
+            }
+            Picker(selection: $itemSortRaw) {
                 ForEach(BrowseItemSort.allCases) { mode in
                     Text(mode.label).tag(mode.rawValue)
                 }
+            } label: {
+                Label("Sort Items", systemImage: "arrow.up.arrow.down")
             }
+            .pickerStyle(.menu)
         } label: {
-            Image(systemName: "arrow.up.arrow.down")
+            Image(systemName: "ellipsis.circle")
         }
+    }
+
+    // MARK: - Select mode
+
+    private func startSelecting() {
+        selectedItemIDs = []
+        withAnimation { selectingItems = true }
+    }
+
+    private func exitSelection() {
+        withAnimation { selectingItems = false }
+        selectedItemIDs = []
+    }
+
+    private func toggleSelection(_ item: Item) {
+        if selectedItemIDs.contains(item.id) {
+            selectedItemIDs.remove(item.id)
+        } else {
+            selectedItemIDs.insert(item.id)
+        }
+    }
+
+    /// Same as moving one item: the move counts as a check that it's there.
+    private func batchMove(to destination: Location) {
+        let items = selectedItems
+        guard !items.isEmpty else { return }
+        Haptics.write()
+        for item in items {
+            item.location = destination
+            item.markAsVerified()
+        }
+        exitSelection()
+    }
+
+    private func batchVerify() {
+        let items = selectedItems
+        guard !items.isEmpty else { return }
+        Haptics.write()
+        for item in items { item.markAsVerified() }
+        exitSelection()
+    }
+
+    /// Matches "Add to Restock" on the item screen, which only tracked items have.
+    private func batchRestock() {
+        let items = selectedItems.filter { $0.quantity != nil }
+        guard !items.isEmpty else { return }
+        Haptics.write()
+        for item in items { item.manuallyRestocking = true }
+        exitSelection()
+    }
+
+    private func batchDelete() {
+        let items = selectedItems
+        guard !items.isEmpty else { return }
+        Haptics.write()
+        for item in items { modelContext.delete(item) }
+        exitSelection()
+    }
+
+    private func verifyAllHere() {
+        let items = location.itemList
+        guard !items.isEmpty else { return }
+        Haptics.write()
+        for item in items { item.markAsVerified() }
     }
 
     // MARK: - Free-tier gate (U9): paywall at presentation, not after the form
@@ -266,7 +411,7 @@ struct BrowseLocationView: View {
     @ViewBuilder
     private func listContent(children: [Location], items: [Item], mixed: Bool) -> some View {
         List {
-            if !coachMarkSeen && !items.isEmpty {
+            if !coachMarkSeen && !items.isEmpty && !selectingItems {
                 coachMark
             }
             if mixed {
@@ -321,6 +466,20 @@ struct BrowseLocationView: View {
 
     @ViewBuilder
     private func locationRows(_ children: [Location]) -> some View {
+        if selectingItems {
+            // Only items can be selected; spaces are dimmed and do nothing.
+            ForEach(children) { child in
+                LocationRow(location: child)
+                    .opacity(0.4)
+                    .accessibilityHidden(true)
+            }
+        } else {
+            navigableLocationRows(children)
+        }
+    }
+
+    @ViewBuilder
+    private func navigableLocationRows(_ children: [Location]) -> some View {
         ForEach(children) { child in
             NavigationLink(value: child) {
                 LocationRow(location: child)
@@ -363,6 +522,23 @@ struct BrowseLocationView: View {
 
     @ViewBuilder
     private func itemRows(_ items: [Item]) -> some View {
+        if selectingItems {
+            // No detail tap, swipe actions or context menu while selecting.
+            ForEach(items) { item in
+                SelectableItemRow(
+                    item: item,
+                    isSelected: selectedItemIDs.contains(item.id),
+                    tint: areaTint,
+                    toggle: { toggleSelection(item) }
+                )
+            }
+        } else {
+            actionableItemRows(items)
+        }
+    }
+
+    @ViewBuilder
+    private func actionableItemRows(_ items: [Item]) -> some View {
         ForEach(items) { item in
             Button { activeSheet = .itemDetail(item) } label: {
                 ItemRow(item: item)
